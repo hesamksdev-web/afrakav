@@ -1,0 +1,60 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: afrashodan-postgres
+    environment:
+      POSTGRES_USER: afrashodan
+      POSTGRES_PASSWORD: afrashodan
+      POSTGRES_DB: afrashodan
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U afrashodan -d afrashodan"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
+
+  backend:
+    build:
+      context: ./backend
+    image: afranet/afrashodan-backend
+    container_name: afrashodan-backend
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      AFRASHODAN_ADDR: ":8080"
+      DATABASE_URL: "postgres://afrashodan:afrashodan@postgres:5432/afrashodan?sslmode=disable"
+      # CHANGE THESE in production.
+      JWT_SECRET: "change-me-to-a-long-random-secret"
+      ADMIN_USER: "admin"
+      ADMIN_PASSWORD: "admin12345"
+      # Optional demo customer, seeded with the bundled sample scan on first boot.
+      DEMO_USER: "demo"
+      DEMO_PASSWORD: "demo12345"
+      AFRASHODAN_SEED: "/app/data/sample.nessus"
+    ports:
+      - "8080:8080"          # exposed for direct API access / debugging
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8080/api/health"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 8s
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: .
+    image: afranet/afrashodan-frontend
+    container_name: afrashodan-frontend
+    depends_on:
+      backend:
+        condition: service_healthy
+    ports:
+      - "8081:80"            # open http://localhost:8081
+    restart: unless-stopped
+
+volumes:
+  pgdata:

@@ -1,0 +1,56 @@
+<?xml version="1.0" ?>
+<NessusClientData_v2>
+  <Report name="Afranet Sample Scan">
+    <ReportHost name="192.168.10.5">
+      <HostProperties>
+        <tag name="host-ip">192.168.10.5</tag>
+        <tag name="host-fqdn">web01.corp.afranet.local</tag>
+        <tag name="netbios-name">WEB01</tag>
+        <tag name="operating-system">Ubuntu 22.04 LTS (Jammy Jellyfish)</tag>
+        <tag name="HOST_END_TIMESTAMP">1752156000</tag>
+      </HostProperties>
+      <ReportItem port="22" svc_name="ssh" protocol="tcp" severity="0" pluginID="10267" pluginName="SSH Server Type and Version Information" pluginFamily="Service detection">
+        <description>It is possible to obtain information about the remote SSH server.</description>
+        <plugin_output>SSH-2.0-OpenSSH_8.9p1 Ubuntu-3ubuntu0.3</plugin_output>
+        <cvss_base_score>0.0</cvss_base_score>
+      </ReportItem>
+      <ReportItem port="443" svc_name="www" protocol="tcp" severity="4" pluginID="166894" pluginName="OpenSSL X.509 Email Address Buffer Overflow" pluginFamily="General">
+        <description>A buffer overrun can be triggered in X.509 certificate verification.</description>
+        <solution>Upgrade OpenSSL to version 3.0.7 or later.</solution>
+        <cvss_base_score>9.6</cvss_base_score>
+        <cvss3_base_score>9.6</cvss3_base_score>
+        <cve>CVE-2022-3602</cve>
+        <see_also>https://www.openssl.org/news/secadv/20221101.txt</see_also>
+        <plugin_output>HTTP/1.1 200 OK
+Server: nginx/1.22.1
+Strict-Transport-Security: max-age=31536000</plugin_output>
+      </ReportItem>
+      <ReportItem port="80" svc_name="www" protocol="tcp" severity="2" pluginID="11213" pluginName="HTTP TRACE / TRACK Methods Allowed" pluginFamily="Web Servers">
+        <description>The remote web server supports the TRACE and/or TRACK HTTP methods.</description>
+        <solution>Disable the TRACE and TRACK methods on your web server.</solution>
+        <cvss_base_score>5.0</cvss_base_score>
+      </ReportItem>
+    </ReportHost>
+    <ReportHost name="192.168.10.9">
+      <HostProperties>
+        <tag name="host-ip">192.168.10.9</tag>
+        <tag name="host-fqdn">dc01.corp.afranet.local</tag>
+        <tag name="operating-system">Windows Server 2019 Standard 17763</tag>
+        <tag name="HOST_END_TIMESTAMP">1752155000</tag>
+      </HostProperties>
+      <ReportItem port="3389" svc_name="msrdp" protocol="tcp" severity="4" pluginID="125313" pluginName="MS Remote Desktop Services RCE (BlueKeep)" pluginFamily="Windows">
+        <description>A remote code execution vulnerability exists in Remote Desktop Services.</description>
+        <solution>Apply the appropriate Microsoft patch and enable NLA.</solution>
+        <cvss_base_score>9.8</cvss_base_score>
+        <cve>CVE-2019-0708</cve>
+        <plugin_output>RDP\r\nNLA required: No\r\nOS: Windows Server 2019</plugin_output>
+      </ReportItem>
+      <ReportItem port="445" svc_name="cifs" protocol="tcp" severity="4" pluginID="97833" pluginName="MS17-010 SMB Server (EternalBlue)" pluginFamily="Windows">
+        <description>The SMBv1 server allows remote attackers to execute arbitrary code.</description>
+        <solution>Apply MS17-010 and disable SMBv1.</solution>
+        <cvss_base_score>9.3</cvss_base_score>
+        <cve>CVE-2017-0144</cve>
+      </ReportItem>
+    </ReportHost>
+  </Report>
+</NessusClientData_v2>
