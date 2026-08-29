@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { ComposableMap, Geographies, Geography, Marker } from "react-simple-maps";
+import { ComposableMap, Geographies, Geography, Graticule, Marker, Sphere } from "react-simple-maps";
 import { Globe } from "lucide-react";
 // Land silhouette bundled at build time — no external tile/CDN requests.
 import land110m from "world-atlas/land-110m.json";
@@ -40,16 +40,42 @@ export interface CountryStat {
   critical: number;
 }
 
+// Placeholder distribution shown until real geo data exists (Nessus files
+// carry no location info — the backend fills country fields with "—").
+// Rendered with a "sample data" badge and non-clickable markers.
+export const MOCK_COUNTRY_STATS: CountryStat[] = [
+  { code: "IR", name: "ایران",    hosts: 148, critical: 12 },
+  { code: "AE", name: "امارات",   hosts: 34,  critical: 0 },
+  { code: "TR", name: "ترکیه",    hosts: 27,  critical: 3 },
+  { code: "DE", name: "آلمان",    hosts: 22,  critical: 0 },
+  { code: "NL", name: "هلند",     hosts: 16,  critical: 1 },
+  { code: "US", name: "آمریکا",   hosts: 14,  critical: 0 },
+  { code: "GB", name: "انگلستان", hosts: 9,   critical: 0 },
+  { code: "FR", name: "فرانسه",   hosts: 8,   critical: 2 },
+  { code: "SG", name: "سنگاپور",  hosts: 7,   critical: 0 },
+  { code: "IN", name: "هند",      hosts: 6,   critical: 0 },
+  { code: "RU", name: "روسیه",    hosts: 5,   critical: 1 },
+  { code: "CN", name: "چین",      hosts: 4,   critical: 0 },
+  { code: "BR", name: "برزیل",    hosts: 3,   critical: 0 },
+  { code: "AU", name: "استرالیا", hosts: 2,   critical: 0 },
+];
+
 export default function WorldMap({ stats, onSelect }: {
   stats: CountryStat[];
   onSelect: (countryCode: string) => void;
 }) {
   const [hovered, setHovered] = useState<CountryStat | null>(null);
 
-  const placed = useMemo(
-    () => stats.filter(s => CENTROIDS[s.code]).sort((a, b) => b.hosts - a.hosts),
-    [stats],
-  );
+  // Only stats whose country code maps to a known centroid can be drawn.
+  // Placeholder codes like "—" don't qualify, so an all-placeholder dataset
+  // falls back to the badged sample distribution.
+  const { placed, sample } = useMemo(() => {
+    const real = stats
+      .filter(s => CENTROIDS[s.code])
+      .sort((a, b) => b.hosts - a.hosts);
+    if (real.length > 0) return { placed: real, sample: false };
+    return { placed: MOCK_COUNTRY_STATS, sample: true };
+  }, [stats]);
   const maxHosts = Math.max(1, ...placed.map(s => s.hosts));
 
   return (
@@ -57,14 +83,21 @@ export default function WorldMap({ stats, onSelect }: {
       <div className="px-4 py-3 border-b border-border bg-secondary/20 flex items-center gap-2">
         <Globe size={13} className="text-primary" />
         <span className="text-xs font-semibold text-foreground">پراکندگی جغرافیایی میزبان‌ها</span>
+        {sample && (
+          <span className="text-[9px] font-bold px-1.5 py-0.5 rounded border border-[#f5c518]/40 bg-[#f5c518]/10 text-[#b58900] dark:text-[#f5c518]">
+            دادهٔ نمونه
+          </span>
+        )}
         <span className="ms-auto text-[10px] text-muted-foreground">
           {hovered
-            ? <>«{hovered.name}» — {faNum(hovered.hosts)} میزبان{hovered.critical > 0 && <span className="text-[#ff3b3b]"> · {faNum(hovered.critical)} بحرانی</span>}</>
-            : "برای فیلتر کردن نتایج، روی یک کشور کلیک کنید"}
+            ? <>«{hovered.name}» — {faNum(hovered.hosts)} میزبان{hovered.critical > 0 && <span className="text-destructive"> · {faNum(hovered.critical)} بحرانی</span>}</>
+            : sample
+              ? "نمایش آزمایشی — با افزودن موقعیت واقعی میزبان‌ها فعال می‌شود"
+              : "برای فیلتر کردن نتایج، روی یک کشور کلیک کنید"}
         </span>
       </div>
 
-      <div dir="ltr" className="relative bg-[#080b0f]">
+      <div dir="ltr" className="relative">
         <ComposableMap
           projection="geoNaturalEarth1"
           projectionConfig={{ scale: 160, center: [15, 5] }}
@@ -72,13 +105,30 @@ export default function WorldMap({ stats, onSelect }: {
           height={420}
           style={{ width: "100%", height: "auto", display: "block" }}
         >
+          <defs>
+            <radialGradient id="wm-ocean" cx="50%" cy="42%" r="75%">
+              <stop offset="0%" stopColor="var(--map-ocean-1)" />
+              <stop offset="100%" stopColor="var(--map-ocean-2)" />
+            </radialGradient>
+            <filter id="wm-glow" x="-80%" y="-80%" width="260%" height="260%">
+              <feGaussianBlur stdDeviation="3.2" result="b" />
+              <feMerge>
+                <feMergeNode in="b" />
+                <feMergeNode in="SourceGraphic" />
+              </feMerge>
+            </filter>
+          </defs>
+
+          <Sphere id="wm-sphere" fill="url(#wm-ocean)" stroke="none" strokeWidth={0} />
+          <Graticule stroke="var(--map-grid)" strokeWidth={0.4} step={[20, 20]} />
+
           <Geographies geography={land110m as any}>
             {({ geographies }) => geographies.map(geo => (
               <Geography
                 key={geo.rsmKey}
                 geography={geo}
-                fill="#131a22"
-                stroke="rgba(0, 229, 160, 0.12)"
+                fill="var(--map-land)"
+                stroke="var(--map-stroke)"
                 strokeWidth={0.5}
                 style={{ default: { outline: "none" }, hover: { outline: "none" }, pressed: { outline: "none" } }}
               />
@@ -88,26 +138,39 @@ export default function WorldMap({ stats, onSelect }: {
           {placed.map(s => {
             const r = 4 + 9 * Math.sqrt(s.hosts / maxHosts);
             const hot = s.critical > 0;
-            const color = hot ? "#ff3b3b" : "#00e5a0";
+            const color = hot ? "var(--destructive)" : "var(--primary)";
+            const isHovered = hovered?.code === s.code;
             return (
               <Marker
                 key={s.code}
                 coordinates={CENTROIDS[s.code]}
-                onClick={() => onSelect(s.code)}
+                onClick={() => { if (!sample) onSelect(s.code); }}
                 onMouseEnter={() => setHovered(s)}
                 onMouseLeave={() => setHovered(null)}
-                style={{ default: { cursor: "pointer" } }}
+                style={{ default: { cursor: sample ? "default" : "pointer" } }}
               >
-                <circle r={r + 4} fill={color} opacity={0.12}>
-                  <animate attributeName="r" values={`${r + 2};${r + 8};${r + 2}`} dur="2.4s" repeatCount="indefinite" />
-                  <animate attributeName="opacity" values="0.18;0.04;0.18" dur="2.4s" repeatCount="indefinite" />
+                {/* Radar sweep */}
+                <circle r={r + 4} fill="none" stroke={color} strokeWidth={0.8} opacity={0.4}>
+                  <animate attributeName="r" values={`${r};${r + 14}`} dur="2.8s" repeatCount="indefinite" />
+                  <animate attributeName="opacity" values="0.45;0" dur="2.8s" repeatCount="indefinite" />
                 </circle>
-                <circle r={r} fill={color} opacity={0.28} stroke={color} strokeOpacity={0.7} strokeWidth={1} />
-                <circle r={1.8} fill={color} />
+                <circle r={r + 4} fill={color} opacity={0.1}>
+                  <animate attributeName="r" values={`${r + 2};${r + 8};${r + 2}`} dur="2.8s" repeatCount="indefinite" />
+                </circle>
+                {/* Body + glowing core */}
+                <circle r={r} fill={color} opacity={isHovered ? 0.4 : 0.24} stroke={color} strokeOpacity={0.8} strokeWidth={1} />
+                <circle r={2} fill={color} filter="url(#wm-glow)" />
                 <text
                   textAnchor="middle"
-                  y={-r - 5}
-                  style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 9, fill: hovered?.code === s.code ? color : "#8b949e", pointerEvents: "none" }}
+                  y={-r - 6}
+                  style={{
+                    fontFamily: "'JetBrains Mono', monospace",
+                    fontSize: isHovered ? 10 : 9,
+                    fontWeight: isHovered ? 700 : 400,
+                    fill: isHovered ? color : "var(--map-label)",
+                    pointerEvents: "none",
+                    transition: "font-size .15s",
+                  }}
                 >
                   {s.code} · {s.hosts}
                 </text>
@@ -115,6 +178,16 @@ export default function WorldMap({ stats, onSelect }: {
             );
           })}
         </ComposableMap>
+
+        {/* Legend */}
+        <div className="absolute bottom-2.5 left-3 flex items-center gap-3 text-[9px] font-mono px-2 py-1 rounded border border-border/60 bg-card/70 backdrop-blur-sm" style={{ color: "var(--map-label)" }}>
+          <span className="flex items-center gap-1.5">
+            <span className="w-2 h-2 rounded-full bg-primary/80" /> hosts
+          </span>
+          <span className="flex items-center gap-1.5">
+            <span className="w-2 h-2 rounded-full bg-destructive/80" /> critical
+          </span>
+        </div>
       </div>
 
       {/* Country strip */}
@@ -123,12 +196,12 @@ export default function WorldMap({ stats, onSelect }: {
           {placed.map(s => (
             <button
               key={s.code}
-              onClick={() => onSelect(s.code)}
+              onClick={() => { if (!sample) onSelect(s.code); }}
               onMouseEnter={() => setHovered(s)}
               onMouseLeave={() => setHovered(null)}
-              className={`text-[10px] rounded border px-2 py-0.5 transition-colors cursor-pointer
+              className={`text-[10px] rounded border px-2 py-0.5 transition-colors ${sample ? "cursor-default" : "cursor-pointer"}
                 ${s.critical > 0
-                  ? "border-[#ff3b3b]/25 text-[#ff3b3b]/80 hover:bg-[#ff3b3b]/10"
+                  ? "border-destructive/25 text-destructive/80 hover:bg-destructive/10"
                   : "border-border text-muted-foreground hover:text-primary hover:border-primary/30"}`}
             >
               {s.name} · {faNum(s.hosts)}

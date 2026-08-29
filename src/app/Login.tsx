@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Shield, Lock, User as UserIcon, Loader2 } from "lucide-react";
 import { useAuth } from "./auth";
+import ThemeToggle from "./components/ThemeToggle";
 
 export default function Login() {
   const { login } = useAuth();
@@ -23,6 +24,7 @@ export default function Login() {
 
   return (
     <div className="min-h-screen bg-background flex flex-col items-center justify-center px-4">
+      <div className="fixed top-4 end-4"><ThemeToggle /></div>
       <div className="w-full max-w-sm">
         {/* Brand */}
         <div className="flex items-center justify-center gap-2 mb-1">

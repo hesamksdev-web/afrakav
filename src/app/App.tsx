@@ -10,6 +10,7 @@ import { AuthProvider, useAuth } from "./auth";
 import Login from "./Login";
 import Admin from "./Admin";
 import WorldMap, { CountryStat } from "./components/WorldMap";
+import ThemeToggle from "./components/ThemeToggle";
 
 // ── Types ──────────────────────────────────────────────────────────────────
 type Severity = "Critical" | "High" | "Medium" | "Low" | "Info";
@@ -110,6 +111,7 @@ function BrandNav({ username, onLogout, maxW = "max-w-5xl" }: { username?: strin
         </div>
         <div className="ms-auto flex items-center gap-4">
           {username && <span className="text-xs font-mono text-muted-foreground hidden sm:block" dir="ltr">{username}</span>}
+          <ThemeToggle />
           <button onClick={onLogout} className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-[#ff3b3b] transition-colors">
             <LogOut size={13} className="-scale-x-100" /> خروج
           </button>
@@ -175,8 +177,10 @@ function Home({ hosts, loading, onSearch, username, onLogout }: {
             ))}
           </div>
 
-          {/* World map — geographic spread of this customer's hosts */}
-          {!loading && countryStats.length > 0 && (
+          {/* World map — geographic spread of this customer's hosts.
+              Nessus uploads carry no geo data (backend fills "—"), so the map
+              falls back internally to a badged sample distribution. */}
+          {!loading && (
             <WorldMap stats={countryStats} onSelect={code => onSearch(`country:${code.toLowerCase()}`)} />
           )}
 
@@ -242,6 +246,7 @@ function SearchResults({
           <span className="text-xs text-muted-foreground hidden md:block flex-shrink-0">
             {faNum(results.length)} نتیجه
           </span>
+          <ThemeToggle />
         </div>
       </header>
 
@@ -371,6 +376,7 @@ function HostPage({ host, onBack, onSearch }: { host: HostRecord; onBack: () => 
             <span className="px-3 text-muted-foreground flex-shrink-0"><Search size={13} /></span>
             <input value={q} onChange={e => setQ(e.target.value)} dir="ltr" className="flex-1 py-2 bg-transparent text-sm font-mono text-foreground focus:outline-none" />
           </form>
+          <ThemeToggle />
         </div>
       </header>
 
@@ -479,8 +485,8 @@ function HostPage({ host, onBack, onSearch }: { host: HostRecord; onBack: () => 
                   </div>
                   {/* Banner */}
                   {isOpen && (
-                    <div className="px-4 pb-4 bg-[#080b0f]" dir="ltr">
-                      <pre className="text-[11px] font-mono text-[#8b949e] whitespace-pre-wrap leading-relaxed border border-border/50 rounded p-3 overflow-x-auto text-left">
+                    <div className="px-4 pb-4" dir="ltr" style={{ background: "var(--terminal-bg)" }}>
+                      <pre className="text-[11px] font-mono text-muted-foreground whitespace-pre-wrap leading-relaxed border border-border/50 rounded p-3 overflow-x-auto text-left">
                         {p.banner}
                       </pre>
                     </div>

@@ -5,6 +5,7 @@ import {
 } from "lucide-react";
 import { useAuth } from "./auth";
 import { Customer, listCustomers, createCustomer, adminUpload } from "./api";
+import ThemeToggle from "./components/ThemeToggle";
 
 const faNum = (n: number) => n.toLocaleString("fa-IR");
 
@@ -29,6 +30,7 @@ export default function Admin() {
           <span className="text-[10px] text-muted-foreground border-s border-border ps-2">مدیریت</span>
           <div className="ms-auto flex items-center gap-4">
             <span className="text-xs font-mono text-muted-foreground hidden sm:block" dir="ltr">{user?.username}</span>
+            <ThemeToggle />
             <button onClick={logout} className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-[#ff3b3b] transition-colors">
               <LogOut size={13} className="-scale-x-100" /> خروج
             </button>
