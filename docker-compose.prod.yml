@@ -1,17 +1,8 @@
 # Production overlay for the company servers (private IPs).
 #   docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+# Passing -f explicitly also stops docker-compose.override.yml from loading,
+# so postgres and backend stay unpublished and only nginx faces the network.
 services:
-  postgres:
-    # Never reachable from the network — only the backend talks to it.
-    ports: []
-
-  backend:
-    # Not published on the host at all — nginx reaches it as backend:8080 over
-    # the compose network, and users hit it through /api/ on port 80.
-    # (Publishing 8080 clashed with an existing service on the company server.)
-    ports: []
-
   frontend:
-    # Users open http://<server-private-ip>/
     ports:
-      - "80:80"
+      - "80:80"              # users open http://<server-private-ip>/

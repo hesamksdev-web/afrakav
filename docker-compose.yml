@@ -35,8 +35,8 @@ services:
       DEMO_USER: ${DEMO_USER:-}
       DEMO_PASSWORD: ${DEMO_PASSWORD:-}
       AFRASHODAN_SEED: "/app/data/sample.nessus"
-    ports:
-      - "8080:8080"          # exposed for direct API access / debugging
+    # No host port: nginx reaches the API as backend:8080 on the compose
+    # network. docker-compose.override.yml publishes it for local development.
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8080/api/health"]
       interval: 10s
@@ -53,8 +53,8 @@ services:
     depends_on:
       backend:
         condition: service_healthy
-    ports:
-      - "8081:80"            # open http://localhost:8081
+    # No host port here either — see docker-compose.override.yml (development)
+    # and docker-compose.prod.yml (servers).
     restart: unless-stopped
 
 volumes:

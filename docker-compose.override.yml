@@ -1,0 +1,10 @@
+# Development convenience, loaded automatically by a plain `docker compose up`.
+# It is NOT loaded when files are passed explicitly with -f, so the production
+# command in deploy.sh never picks it up.
+services:
+  backend:
+    ports:
+      - "8080:8080"          # direct API access / debugging
+  frontend:
+    ports:
+      - "8081:80"            # open http://localhost:8081
