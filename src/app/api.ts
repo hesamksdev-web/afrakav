@@ -48,6 +48,7 @@ export interface User {
   username: string;
   role: "admin" | "customer";
   displayName: string;
+  disabled: boolean;
 }
 
 export interface Customer extends User {
@@ -86,8 +87,14 @@ const ERROR_FA: Record<string, string> = {
   "lookup failed": "جست‌وجو با خطا مواجه شد",
   "could not load scans": "خطا در بارگیری اسکن‌ها",
   "could not list customers": "خطا در بارگیری فهرست مشتریان",
-  "username must be at least 3 and password at least 6 characters":
-    "نام کاربری باید دست‌کم ۳ و رمز عبور دست‌کم ۶ نویسه باشد",
+  "username must be at least 3 characters": "نام کاربری باید دست‌کم ۳ نویسه باشد",
+  "password must be at least 12 characters": "رمز عبور باید دست‌کم ۱۲ نویسه باشد",
+  "this password is too easy to guess": "این رمز عبور بیش از حد ساده است؛ رمز دیگری انتخاب کنید",
+  "current password is incorrect": "رمز عبور فعلی نادرست است",
+  "could not change the password": "تغییر رمز عبور با خطا مواجه شد",
+  "could not update the account": "به‌روزرسانی حساب با خطا مواجه شد",
+  "this account is suspended": "این حساب غیرفعال شده است؛ با مدیر سامانه تماس بگیرید",
+  "could not parse the Nessus file": "پردازش فایل Nessus ممکن نبود؛ لطفاً از معتبر بودن فایل مطمئن شوید",
   "hash failed": "خطای داخلی سرور؛ لطفاً دوباره تلاش کنید",
   "this username is already taken": "این نام کاربری قبلاً استفاده شده است",
   "could not create customer": "ایجاد مشتری با خطا مواجه شد",
@@ -103,11 +110,7 @@ const ERROR_FA: Record<string, string> = {
 };
 
 function translateError(msg: string): string {
-  if (ERROR_FA[msg]) return ERROR_FA[msg];
-  if (msg.startsWith("could not parse Nessus file:")) {
-    return "پردازش فایل Nessus ممکن نبود؛ لطفاً از معتبر بودن فایل مطمئن شوید";
-  }
-  return msg;
+  return ERROR_FA[msg] ?? msg;
 }
 
 // Scan files come from outside the platform, and a vulnerability's seeAlso is
@@ -170,6 +173,16 @@ export function logout() {
   tokenStore.clear();
 }
 
+// Changing a password invalidates every token issued before it, including the
+// one this session is holding, so the server hands back a replacement.
+export async function changePassword(currentPassword: string, newPassword: string): Promise<void> {
+  const data = await request<{ token: string }>("/api/password", {
+    method: "POST",
+    body: JSON.stringify({ currentPassword, newPassword }),
+  });
+  tokenStore.set(data.token);
+}
+
 // ── customer-scoped data ────────────────────────────────────────────────────
 export function fetchHosts(customerId?: number): Promise<HostRecord[]> {
   return request<HostRecord[]>(`/api/hosts${qs(customerId)}`);
@@ -188,6 +201,22 @@ export function createCustomer(username: string, password: string, displayName: 
   return request<User>("/api/admin/customers", {
     method: "POST",
     body: JSON.stringify({ username, password, displayName }),
+  });
+}
+
+// Resetting a customer's password signs them out of every open session.
+export function resetCustomerPassword(customerId: number, password: string): Promise<{ status: string }> {
+  return request(`/api/admin/customers/${customerId}/password`, {
+    method: "POST",
+    body: JSON.stringify({ password }),
+  });
+}
+
+// Suspending a customer takes effect immediately, not at token expiry.
+export function setCustomerStatus(customerId: number, disabled: boolean): Promise<{ status: string }> {
+  return request(`/api/admin/customers/${customerId}/status`, {
+    method: "POST",
+    body: JSON.stringify({ disabled }),
   });
 }
 

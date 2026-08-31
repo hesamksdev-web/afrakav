@@ -9,7 +9,7 @@ func TestTokenRoundTrip(t *testing.T) {
 	iss := NewIssuer("secret", time.Hour)
 	now := time.Unix(1_700_000_000, 0)
 
-	tok, err := iss.Issue(42, "acme", RoleTest, now)
+	tok, err := iss.Issue(42, "acme", RoleTest, 1, now)
 	if err != nil {
 		t.Fatalf("issue: %v", err)
 	}
@@ -25,7 +25,7 @@ func TestTokenRoundTrip(t *testing.T) {
 func TestExpiredToken(t *testing.T) {
 	iss := NewIssuer("secret", time.Minute)
 	now := time.Unix(1_700_000_000, 0)
-	tok, _ := iss.Issue(1, "u", RoleTest, now)
+	tok, _ := iss.Issue(1, "u", RoleTest, 1, now)
 	if _, err := iss.Parse(tok, now.Add(2*time.Minute)); err == nil {
 		t.Fatal("expected expired token to be rejected")
 	}
@@ -35,7 +35,7 @@ func TestTamperedToken(t *testing.T) {
 	iss := NewIssuer("secret", time.Hour)
 	other := NewIssuer("different-secret", time.Hour)
 	now := time.Unix(1_700_000_000, 0)
-	tok, _ := iss.Issue(1, "u", RoleTest, now)
+	tok, _ := iss.Issue(1, "u", RoleTest, 1, now)
 	if _, err := other.Parse(tok, now); err == nil {
 		t.Fatal("expected signature check to fail under a different secret")
 	}

@@ -31,6 +31,7 @@ type Claims struct {
 	UserID   int64  `json:"uid"`
 	Username string `json:"usr"`
 	Role     string `json:"role"`
+	Version  int    `json:"ver"` // must still match the user's token_version
 	Exp      int64  `json:"exp"` // unix seconds
 }
 
@@ -51,12 +52,13 @@ func NewIssuer(secret string, ttl time.Duration) *Issuer {
 }
 
 // Issue returns a signed token for a user. `now` is passed in for testability.
-func (i *Issuer) Issue(userID int64, username, role string, now time.Time) (string, error) {
+func (i *Issuer) Issue(userID int64, username, role string, version int, now time.Time) (string, error) {
 	header := b64.EncodeToString([]byte(`{"alg":"HS256","typ":"JWT"}`))
 	claims := Claims{
 		UserID:   userID,
 		Username: username,
 		Role:     role,
+		Version:  version,
 		Exp:      now.Add(i.ttl).Unix(),
 	}
 	payloadJSON, err := json.Marshal(claims)

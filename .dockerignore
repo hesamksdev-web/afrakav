@@ -7,3 +7,5 @@ backend
 .DS_Store
 Dockerfile
 docker-compose.yml
+certs
+scripts

@@ -41,9 +41,25 @@ import (
 )
 
 const (
-	maxUploadBytes = 64 << 20 // 64 MiB
+	maxUploadBytes = 64 << 20 // hard cap on an upload
+	uploadMemory   = 8 << 20  // keep this much of it in RAM; the rest spills to disk
 	minSecretLen   = 32       // shortest JWT_SECRET we will start with
+	minUsernameLen = 3
+	minPasswordLen = 12
 )
+
+// dummyHash is compared against when a login names an account that does not
+// exist, so a wrong username costs the same bcrypt work as a wrong password and
+// the response time stops revealing which accounts are real.
+var dummyHash, _ = auth.HashPassword("afrashodan-timing-equalizer")
+
+// commonPasswords are rejected outright — length alone does not save a password
+// an attacker tries first.
+var commonPasswords = map[string]bool{
+	"123456789012": true, "password1234": true, "qwertyuiop12": true,
+	"adminadmin12": true, "afrashodan12": true, "changemeplease": true,
+	"passwordpassword": true, "administrator": true, "letmeinplease": true,
+}
 
 type server struct {
 	db     *db.DB
@@ -85,10 +101,13 @@ func main() {
 	mux.Handle("GET /api/search", srv.authed(srv.handleSearch))
 	mux.Handle("GET /api/stats", srv.authed(srv.handleStats))
 	mux.Handle("GET /api/scans", srv.authed(srv.handleScans))
+	mux.Handle("POST /api/password", srv.authed(srv.handleChangePassword))
 
 	mux.Handle("GET /api/admin/customers", srv.adminOnly(srv.handleListCustomers))
 	mux.Handle("POST /api/admin/customers", srv.adminOnly(srv.handleCreateCustomer))
 	mux.Handle("POST /api/admin/upload", srv.adminOnly(srv.handleUpload))
+	mux.Handle("POST /api/admin/customers/{id}/password", srv.adminOnly(srv.handleResetPassword))
+	mux.Handle("POST /api/admin/customers/{id}/status", srv.adminOnly(srv.handleSetStatus))
 
 	log.Printf("Afrashodan backend listening on %s", addr)
 	httpSrv := &http.Server{
@@ -106,6 +125,13 @@ func (s *server) bootstrap(ctx context.Context) {
 	adminPass := os.Getenv("ADMIN_PASSWORD")
 	if adminUser != "" && adminPass != "" {
 		if _, err := s.db.GetUserByUsername(ctx, adminUser); errors.Is(err, db.ErrNotFound) {
+			if err := validatePassword(adminPass); err != nil {
+				// Don't mint the platform's most privileged account from a weak
+				// secret. Serving continues so an existing deployment is not
+				// bricked by a bad .env, but the admin is not created.
+				log.Printf("bootstrap: refusing to create admin %q — ADMIN_PASSWORD %v", adminUser, err)
+				return
+			}
 			hash, _ := auth.HashPassword(adminPass)
 			if _, err := s.db.CreateUser(ctx, adminUser, hash, db.RoleAdmin, "Administrator"); err != nil {
 				log.Printf("bootstrap admin: %v", err)
@@ -158,12 +184,21 @@ func (s *server) handleLogin(w http.ResponseWriter, r *http.Request) {
 	}
 	username := strings.TrimSpace(body.Username)
 	u, err := s.db.GetUserByUsername(r.Context(), username)
-	if err != nil || !auth.CheckPassword(u.PasswordHash, body.Password) {
+	hash := u.PasswordHash
+	if err != nil {
+		hash = dummyHash // spend the same bcrypt time on a username that does not exist
+	}
+	if !auth.CheckPassword(hash, body.Password) || err != nil {
 		log.Printf("audit: login failed user=%q ip=%s", username, clientIP(r))
 		writeError(w, http.StatusUnauthorized, "invalid username or password")
 		return
 	}
-	token, err := s.issuer.Issue(u.ID, u.Username, u.Role, time.Now())
+	if u.Disabled {
+		log.Printf("audit: login refused (disabled) user=%q ip=%s", username, clientIP(r))
+		writeError(w, http.StatusForbidden, "this account is suspended")
+		return
+	}
+	token, err := s.issuer.Issue(u.ID, u.Username, u.Role, u.TokenVersion, time.Now())
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "could not issue token")
 		return
@@ -178,10 +213,12 @@ func (s *server) handleLogin(w http.ResponseWriter, r *http.Request) {
 // ── authenticated handlers ──────────────────────────────────────────────────
 
 func (s *server) handleMe(w http.ResponseWriter, r *http.Request) {
-	c := claimsFrom(r)
-	writeJSON(w, http.StatusOK, map[string]any{
-		"user": map[string]any{"username": c.Username, "role": c.Role, "id": c.UserID},
-	})
+	u, err := s.db.GetUser(r.Context(), claimsFrom(r).UserID)
+	if err != nil {
+		writeError(w, http.StatusUnauthorized, "authentication required")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"user": publicUser(u)})
 }
 
 func (s *server) handleHosts(w http.ResponseWriter, r *http.Request) {
@@ -282,8 +319,12 @@ func (s *server) handleCreateCustomer(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	body.Username = strings.TrimSpace(body.Username)
-	if len(body.Username) < 3 || len(body.Password) < 6 {
-		writeError(w, http.StatusUnprocessableEntity, "username must be at least 3 and password at least 6 characters")
+	if len([]rune(body.Username)) < minUsernameLen {
+		writeError(w, http.StatusUnprocessableEntity, "username must be at least 3 characters")
+		return
+	}
+	if err := validatePassword(body.Password); err != nil {
+		writeError(w, http.StatusUnprocessableEntity, err.Error())
 		return
 	}
 	hash, err := auth.HashPassword(body.Password)
@@ -307,7 +348,7 @@ func (s *server) handleCreateCustomer(w http.ResponseWriter, r *http.Request) {
 
 func (s *server) handleUpload(w http.ResponseWriter, r *http.Request) {
 	r.Body = http.MaxBytesReader(w, r.Body, maxUploadBytes)
-	if err := r.ParseMultipartForm(maxUploadBytes); err != nil {
+	if err := r.ParseMultipartForm(uploadMemory); err != nil {
 		writeError(w, http.StatusBadRequest, "file too large or malformed form (max 64 MiB)")
 		return
 	}
@@ -331,7 +372,8 @@ func (s *server) handleUpload(w http.ResponseWriter, r *http.Request) {
 
 	hosts, err := nessus.Parse(file)
 	if err != nil {
-		writeError(w, http.StatusUnprocessableEntity, "could not parse Nessus file: "+err.Error())
+		log.Printf("upload: parsing %q failed: %v", header.Filename, err)
+		writeError(w, http.StatusUnprocessableEntity, "could not parse the Nessus file")
 		return
 	}
 	scan, err := s.db.SaveScan(r.Context(), customerID, header.Filename, hosts)
@@ -345,6 +387,137 @@ func (s *server) handleUpload(w http.ResponseWriter, r *http.Request) {
 		"scan":        scan,
 		"hostsParsed": len(hosts),
 	})
+}
+
+// ── account management ──────────────────────────────────────────────────────
+
+// validatePassword enforces the account password policy. Length is the control
+// that matters most here, since /api/login is rate-limited but not unguessable.
+func validatePassword(p string) error {
+	if len([]rune(p)) < minPasswordLen {
+		return errors.New("password must be at least 12 characters")
+	}
+	if commonPasswords[strings.ToLower(strings.TrimSpace(p))] {
+		return errors.New("this password is too easy to guess")
+	}
+	return nil
+}
+
+// handleChangePassword lets the signed-in user replace their own password.
+func (s *server) handleChangePassword(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		CurrentPassword string `json:"currentPassword"`
+		NewPassword     string `json:"newPassword"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	c := claimsFrom(r)
+	u, err := s.db.GetUser(r.Context(), c.UserID)
+	if err != nil || !auth.CheckPassword(u.PasswordHash, body.CurrentPassword) {
+		log.Printf("audit: password change refused user=%q ip=%s", c.Username, clientIP(r))
+		writeError(w, http.StatusUnauthorized, "current password is incorrect")
+		return
+	}
+	if err := validatePassword(body.NewPassword); err != nil {
+		writeError(w, http.StatusUnprocessableEntity, err.Error())
+		return
+	}
+	hash, err := auth.HashPassword(body.NewPassword)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "hash failed")
+		return
+	}
+	if err := s.db.SetPassword(r.Context(), u.ID, hash); err != nil {
+		writeError(w, http.StatusInternalServerError, "could not change the password")
+		return
+	}
+	// The change voided every token issued before it, this request's included,
+	// so hand back a fresh one and keep the caller signed in.
+	fresh, err := s.db.GetUser(r.Context(), u.ID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "could not change the password")
+		return
+	}
+	token, err := s.issuer.Issue(fresh.ID, fresh.Username, fresh.Role, fresh.TokenVersion, time.Now())
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "could not issue token")
+		return
+	}
+	log.Printf("audit: password changed user=%q id=%d ip=%s", u.Username, u.ID, clientIP(r))
+	writeJSON(w, http.StatusOK, map[string]any{"token": token})
+}
+
+// handleResetPassword lets an admin set a customer's password, which also signs
+// that customer out of every session they had open.
+func (s *server) handleResetPassword(w http.ResponseWriter, r *http.Request) {
+	target, ok := s.customerFromPath(w, r)
+	if !ok {
+		return
+	}
+	var body struct {
+		Password string `json:"password"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	if err := validatePassword(body.Password); err != nil {
+		writeError(w, http.StatusUnprocessableEntity, err.Error())
+		return
+	}
+	hash, err := auth.HashPassword(body.Password)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "hash failed")
+		return
+	}
+	if err := s.db.SetPassword(r.Context(), target.ID, hash); err != nil {
+		writeError(w, http.StatusInternalServerError, "could not change the password")
+		return
+	}
+	log.Printf("audit: password reset user=%q id=%d by=%q ip=%s",
+		target.Username, target.ID, claimsFrom(r).Username, clientIP(r))
+	writeJSON(w, http.StatusOK, map[string]any{"status": "ok"})
+}
+
+// handleSetStatus suspends or restores a customer account.
+func (s *server) handleSetStatus(w http.ResponseWriter, r *http.Request) {
+	target, ok := s.customerFromPath(w, r)
+	if !ok {
+		return
+	}
+	var body struct {
+		Disabled bool `json:"disabled"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	if err := s.db.SetDisabled(r.Context(), target.ID, body.Disabled); err != nil {
+		writeError(w, http.StatusInternalServerError, "could not update the account")
+		return
+	}
+	log.Printf("audit: customer %s user=%q id=%d by=%q ip=%s",
+		map[bool]string{true: "suspended", false: "restored"}[body.Disabled],
+		target.Username, target.ID, claimsFrom(r).Username, clientIP(r))
+	writeJSON(w, http.StatusOK, map[string]any{"status": "ok"})
+}
+
+// customerFromPath resolves the {id} path segment to an existing customer.
+// Admin accounts are deliberately not reachable this way.
+func (s *server) customerFromPath(w http.ResponseWriter, r *http.Request) (db.User, bool) {
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "missing or invalid customerId")
+		return db.User{}, false
+	}
+	u, err := s.db.GetUser(r.Context(), id)
+	if err != nil || u.Role != db.RoleCustomer {
+		writeError(w, http.StatusNotFound, "customer not found")
+		return db.User{}, false
+	}
+	return u, true
 }
 
 // ── scoping / middleware ────────────────────────────────────────────────────
@@ -421,6 +594,11 @@ func (s *server) adminOnly(next http.HandlerFunc) http.Handler {
 	})
 }
 
+// verify authenticates a request. The token must carry a valid signature and be
+// unexpired, and the account it names must still exist, still be enabled, and
+// still sit on the token_version the token was minted with. That last check is
+// what makes a password change or a suspension take effect at once rather than
+// whenever the token happens to expire.
 func (s *server) verify(r *http.Request) (auth.Claims, bool) {
 	h := r.Header.Get("Authorization")
 	token, ok := strings.CutPrefix(h, "Bearer ")
@@ -429,6 +607,10 @@ func (s *server) verify(r *http.Request) (auth.Claims, bool) {
 	}
 	c, err := s.issuer.Parse(strings.TrimSpace(token), time.Now())
 	if err != nil {
+		return auth.Claims{}, false
+	}
+	u, err := s.db.GetUser(r.Context(), c.UserID)
+	if err != nil || u.Disabled || u.TokenVersion != c.Version || u.Role != c.Role {
 		return auth.Claims{}, false
 	}
 	return c, true
@@ -447,6 +629,7 @@ func publicUser(u db.User) map[string]any {
 		"username":    u.Username,
 		"role":        u.Role,
 		"displayName": u.DisplayName,
+		"disabled":    u.Disabled,
 	}
 }
 

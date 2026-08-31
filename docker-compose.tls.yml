@@ -1,0 +1,33 @@
+# TLS overlay. deploy.sh adds this automatically once ./certs/server.crt exists;
+# run scripts/gen-certs.sh to create one, or drop your company CA's certificate
+# in as certs/server.crt + certs/server.key.
+#
+#   docker compose -f docker-compose.yml -f docker-compose.prod.yml \
+#                  -f docker-compose.tls.yml up -d
+services:
+  postgres:
+    # Postgres speaks TLS too, so the backend↔database hop stays encrypted even
+    # if the database later moves off this host.
+    command:
+      - postgres
+      - -c
+      - ssl=on
+      - -c
+      - ssl_cert_file=/etc/postgres-certs/server.crt
+      - -c
+      - ssl_key_file=/etc/postgres-certs/server.key
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./certs/postgres:/etc/postgres-certs:ro
+
+  backend:
+    environment:
+      DATABASE_URL: "postgres://${POSTGRES_USER:-afrashodan}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-afrashodan}?sslmode=require"
+
+  frontend:
+    ports:
+      # 80 is already published by docker-compose.prod.yml; nginx redirects it.
+      - "443:443"
+    volumes:
+      - ./nginx-tls.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./certs:/etc/nginx/certs:ro

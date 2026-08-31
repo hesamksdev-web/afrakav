@@ -79,4 +79,10 @@ CREATE TABLE IF NOT EXISTS hosts (
     UNIQUE (customer_id, ip)
 );
 CREATE INDEX IF NOT EXISTS hosts_customer_idx ON hosts (customer_id);
+
+-- token_version invalidates a user's outstanding tokens: every password change
+-- or account suspension bumps it, and tokens carry the value they were issued
+-- with. disabled locks an account without destroying its scan history.
+ALTER TABLE users ADD COLUMN IF NOT EXISTS token_version INT     NOT NULL DEFAULT 1;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS disabled      BOOLEAN NOT NULL DEFAULT false;
 `

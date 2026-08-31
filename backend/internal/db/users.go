@@ -25,6 +25,8 @@ type User struct {
 	Role         string    `json:"role"`
 	DisplayName  string    `json:"displayName"`
 	CreatedAt    time.Time `json:"createdAt"`
+	TokenVersion int       `json:"-"`
+	Disabled     bool      `json:"disabled"`
 }
 
 // CreateUser inserts a user. The caller supplies an already-hashed password.
@@ -33,9 +35,9 @@ func (d *DB) CreateUser(ctx context.Context, username, passwordHash, role, displ
 	err := d.pool.QueryRow(ctx,
 		`INSERT INTO users (username, password_hash, role, display_name)
 		 VALUES ($1, $2, $3, $4)
-		 RETURNING id, username, password_hash, role, display_name, created_at`,
+		 RETURNING id, username, password_hash, role, display_name, created_at, token_version, disabled`,
 		username, passwordHash, role, displayName,
-	).Scan(&u.ID, &u.Username, &u.PasswordHash, &u.Role, &u.DisplayName, &u.CreatedAt)
+	).Scan(&u.ID, &u.Username, &u.PasswordHash, &u.Role, &u.DisplayName, &u.CreatedAt, &u.TokenVersion, &u.Disabled)
 	return u, err
 }
 
@@ -43,9 +45,9 @@ func (d *DB) CreateUser(ctx context.Context, username, passwordHash, role, displ
 func (d *DB) GetUserByUsername(ctx context.Context, username string) (User, error) {
 	var u User
 	err := d.pool.QueryRow(ctx,
-		`SELECT id, username, password_hash, role, display_name, created_at
+		`SELECT id, username, password_hash, role, display_name, created_at, token_version, disabled
 		 FROM users WHERE username = $1`, username,
-	).Scan(&u.ID, &u.Username, &u.PasswordHash, &u.Role, &u.DisplayName, &u.CreatedAt)
+	).Scan(&u.ID, &u.Username, &u.PasswordHash, &u.Role, &u.DisplayName, &u.CreatedAt, &u.TokenVersion, &u.Disabled)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return User{}, ErrNotFound
 	}
@@ -56,9 +58,9 @@ func (d *DB) GetUserByUsername(ctx context.Context, username string) (User, erro
 func (d *DB) GetUser(ctx context.Context, id int64) (User, error) {
 	var u User
 	err := d.pool.QueryRow(ctx,
-		`SELECT id, username, password_hash, role, display_name, created_at
+		`SELECT id, username, password_hash, role, display_name, created_at, token_version, disabled
 		 FROM users WHERE id = $1`, id,
-	).Scan(&u.ID, &u.Username, &u.PasswordHash, &u.Role, &u.DisplayName, &u.CreatedAt)
+	).Scan(&u.ID, &u.Username, &u.PasswordHash, &u.Role, &u.DisplayName, &u.CreatedAt, &u.TokenVersion, &u.Disabled)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return User{}, ErrNotFound
 	}
@@ -77,7 +79,7 @@ type CustomerSummary struct {
 // ListCustomers returns all customer accounts with aggregate counts.
 func (d *DB) ListCustomers(ctx context.Context) ([]CustomerSummary, error) {
 	rows, err := d.pool.Query(ctx, `
-		SELECT u.id, u.username, u.role, u.display_name, u.created_at,
+		SELECT u.id, u.username, u.role, u.display_name, u.created_at, u.disabled,
 		       COALESCE(h.cnt, 0)  AS host_count,
 		       COALESCE(s.cnt, 0)  AS scan_count,
 		       s.last_scan
@@ -97,13 +99,43 @@ func (d *DB) ListCustomers(ctx context.Context) ([]CustomerSummary, error) {
 	out := []CustomerSummary{}
 	for rows.Next() {
 		var c CustomerSummary
-		if err := rows.Scan(&c.ID, &c.Username, &c.Role, &c.DisplayName, &c.CreatedAt,
+		if err := rows.Scan(&c.ID, &c.Username, &c.Role, &c.DisplayName, &c.CreatedAt, &c.Disabled,
 			&c.HostCount, &c.ScanCount, &c.LastScan); err != nil {
 			return nil, err
 		}
 		out = append(out, c)
 	}
 	return out, rows.Err()
+}
+
+// SetPassword replaces a user's password hash and invalidates every token that
+// was issued before the change.
+func (d *DB) SetPassword(ctx context.Context, id int64, passwordHash string) error {
+	tag, err := d.pool.Exec(ctx,
+		`UPDATE users SET password_hash = $2, token_version = token_version + 1
+		 WHERE id = $1`, id, passwordHash)
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
+// SetDisabled suspends or restores an account. Either way outstanding tokens
+// stop working, so a suspension takes effect immediately rather than at expiry.
+func (d *DB) SetDisabled(ctx context.Context, id int64, disabled bool) error {
+	tag, err := d.pool.Exec(ctx,
+		`UPDATE users SET disabled = $2, token_version = token_version + 1
+		 WHERE id = $1`, id, disabled)
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrNotFound
+	}
+	return nil
 }
 
 // CountUsers returns how many accounts exist (used to decide admin bootstrap).

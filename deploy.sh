@@ -12,6 +12,14 @@ if [[ ! -f .env ]]; then
     exit 1
 fi
 
+# HTTPS switches itself on as soon as a certificate is present.
+if [[ -f certs/server.crt && -f certs/server.key ]]; then
+    COMPOSE+=(-f docker-compose.tls.yml)
+    echo "==> TLS enabled (certs/ found)"
+else
+    echo "==> TLS off — run: sudo ./scripts/gen-certs.sh <server-ip-or-hostname>"
+fi
+
 echo "==> git pull"
 git pull --ff-only origin main
 

@@ -11,6 +11,7 @@ import Login from "./Login";
 import Admin from "./Admin";
 import WorldMap, { CountryStat } from "./components/WorldMap";
 import ThemeToggle from "./components/ThemeToggle";
+import ChangePassword from "./components/ChangePassword";
 
 // ── Types ──────────────────────────────────────────────────────────────────
 type Severity = "Critical" | "High" | "Medium" | "Low" | "Info";
@@ -111,6 +112,7 @@ function BrandNav({ username, onLogout, maxW = "max-w-5xl" }: { username?: strin
         </div>
         <div className="ms-auto flex items-center gap-4">
           {username && <span className="text-xs font-mono text-muted-foreground hidden sm:block" dir="ltr">{username}</span>}
+          <ChangePassword />
           <ThemeToggle />
           <button onClick={onLogout} className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-[#ff3b3b] transition-colors">
             <LogOut size={13} className="-scale-x-100" /> خروج
