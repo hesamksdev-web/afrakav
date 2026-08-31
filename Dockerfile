@@ -19,5 +19,7 @@ RUN pnpm build
 # ── runtime stage (nginx serves static bundle + proxies /api) ─────────────────
 FROM nginx:1.27-alpine
 COPY nginx.conf /etc/nginx/conf.d/default.conf
+COPY nginx-security-headers.inc /etc/nginx/security-headers.inc
+COPY nginx-proxy-api.inc /etc/nginx/proxy-api.inc
 COPY --from=webbuild /app/dist /usr/share/nginx/html
 EXPOSE 80

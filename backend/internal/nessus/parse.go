@@ -144,7 +144,7 @@ func convertHost(rh xmlReportHost) Host {
 				Family:      it.PluginFamily,
 				Description: collapse(it.Description),
 				Solution:    collapse(it.Solution),
-				SeeAlso:     firstLine(it.SeeAlso),
+				SeeAlso:     safeURL(firstLine(it.SeeAlso)),
 			})
 		}
 
@@ -225,6 +225,17 @@ func firstCVE(s string) string {
 		if strings.HasPrefix(strings.ToUpper(f), "CVE-") {
 			return strings.ToUpper(f)
 		}
+	}
+	return ""
+}
+
+// safeURL keeps only plain http(s) links. A .nessus file comes from outside the
+// platform and its see_also value is rendered straight into an href, so a
+// "javascript:" URL there would run in the viewer's session on one click.
+func safeURL(s string) string {
+	lower := strings.ToLower(strings.TrimSpace(s))
+	if strings.HasPrefix(lower, "http://") || strings.HasPrefix(lower, "https://") {
+		return strings.TrimSpace(s)
 	}
 	return ""
 }

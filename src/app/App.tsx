@@ -5,7 +5,7 @@ import {
   Cpu, Wifi, ExternalLink, Tag, Activity,
   Building, LogOut, Loader2,
 } from "lucide-react";
-import { fetchHosts } from "./api";
+import { fetchHosts, safeHref } from "./api";
 import { AuthProvider, useAuth } from "./auth";
 import Login from "./Login";
 import Admin from "./Admin";
@@ -551,8 +551,8 @@ function HostPage({ host, onBack, onSearch }: { host: HostRecord; onBack: () => 
                         </div>
                       </div>
 
-                      {v.seeAlso && (
-                        <a href={v.seeAlso} target="_blank" rel="noreferrer" onClick={e => e.stopPropagation()} className="mt-2 inline-flex items-center gap-1 text-[10px] text-primary hover:underline">
+                      {safeHref(v.seeAlso) && (
+                        <a href={safeHref(v.seeAlso)} target="_blank" rel="noreferrer" onClick={e => e.stopPropagation()} className="mt-2 inline-flex items-center gap-1 text-[10px] text-primary hover:underline">
                           <ExternalLink size={9} /> اطلاعات بیشتر
                         </a>
                       )}

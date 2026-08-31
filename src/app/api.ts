@@ -98,6 +98,8 @@ const ERROR_FA: Record<string, string> = {
   "could not save scan": "ذخیرهٔ اسکن با خطا مواجه شد",
   "authentication required": "برای دسترسی باید وارد شوید",
   "admin access required": "این بخش تنها برای مدیران در دسترس است",
+  "access denied": "دسترسی به این داده مجاز نیست",
+  "admin must specify customerId": "برای مشاهدهٔ داده‌ها ابتدا یک مشتری را انتخاب کنید",
 };
 
 function translateError(msg: string): string {
@@ -106,6 +108,15 @@ function translateError(msg: string): string {
     return "پردازش فایل Nessus ممکن نبود؛ لطفاً از معتبر بودن فایل مطمئن شوید";
   }
   return msg;
+}
+
+// Scan files come from outside the platform, and a vulnerability's seeAlso is
+// rendered as a link. Only plain http(s) addresses become an href — anything
+// else (javascript:, data:) would run in the viewer's session when clicked.
+export function safeHref(url: string | undefined): string | undefined {
+  if (!url) return undefined;
+  const trimmed = url.trim();
+  return /^https?:\/\//i.test(trimmed) ? trimmed : undefined;
 }
 
 async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
@@ -119,6 +130,10 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   if (res.status === 401) {
     tokenStore.clear();
     throw new ApiError("نشست شما منقضی شده است؛ لطفاً دوباره وارد شوید", 401);
+  }
+  // nginx rate-limits /api/login and answers with its own HTML error page.
+  if (res.status === 429) {
+    throw new ApiError("تلاش‌های ورود بیش از حد مجاز است؛ چند دقیقه بعد دوباره تلاش کنید", 429);
   }
   const data = await res.json().catch(() => ({}));
   if (!res.ok) {

@@ -6,7 +6,7 @@
   "scripts": {
     "build": "vite build",
     "dev": "vite",
-    "backend": "cd backend && AFRASHODAN_SEED=data/sample.nessus go run .",
+    "backend": "cd backend && DATABASE_URL=\"postgres://afrashodan:afrashodan@localhost:5432/afrashodan?sslmode=disable\" JWT_SECRET=local-development-only-secret-not-for-servers AFRASHODAN_SEED=data/sample.nessus go run .",
     "backend:build": "cd backend && go build -o ../bin/afrashodan ."
   },
   "dependencies": {

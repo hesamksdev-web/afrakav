@@ -28,6 +28,7 @@ import (
 	"encoding/json"
 	"errors"
 	"log"
+	"net"
 	"net/http"
 	"os"
 	"strconv"
@@ -39,7 +40,10 @@ import (
 	"github.com/afranet/afrashodan/internal/nessus"
 )
 
-const maxUploadBytes = 64 << 20 // 64 MiB
+const (
+	maxUploadBytes = 64 << 20 // 64 MiB
+	minSecretLen   = 32       // shortest JWT_SECRET we will start with
+)
 
 type server struct {
 	db     *db.DB
@@ -50,8 +54,11 @@ func main() {
 	ctx := context.Background()
 
 	addr := envOr("AFRASHODAN_ADDR", ":8080")
-	dsn := envOr("DATABASE_URL", "postgres://afrashodan:afrashodan@localhost:5432/afrashodan?sslmode=disable")
-	secret := envOr("JWT_SECRET", "dev-insecure-secret-change-me")
+	dsn := mustEnv("DATABASE_URL")
+	secret := mustEnv("JWT_SECRET")
+	if len(secret) < minSecretLen {
+		log.Fatalf("JWT_SECRET must be at least %d characters", minSecretLen)
+	}
 
 	database, err := db.Connect(ctx, dsn)
 	if err != nil {
@@ -86,7 +93,7 @@ func main() {
 	log.Printf("Afrashodan backend listening on %s", addr)
 	httpSrv := &http.Server{
 		Addr:              addr,
-		Handler:           cors(mux),
+		Handler:           mux,
 		ReadHeaderTimeout: 10 * time.Second,
 	}
 	log.Fatal(httpSrv.ListenAndServe())
@@ -149,8 +156,10 @@ func (s *server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid request body")
 		return
 	}
-	u, err := s.db.GetUserByUsername(r.Context(), strings.TrimSpace(body.Username))
+	username := strings.TrimSpace(body.Username)
+	u, err := s.db.GetUserByUsername(r.Context(), username)
 	if err != nil || !auth.CheckPassword(u.PasswordHash, body.Password) {
+		log.Printf("audit: login failed user=%q ip=%s", username, clientIP(r))
 		writeError(w, http.StatusUnauthorized, "invalid username or password")
 		return
 	}
@@ -159,6 +168,7 @@ func (s *server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "could not issue token")
 		return
 	}
+	log.Printf("audit: login ok user=%q id=%d role=%s ip=%s", u.Username, u.ID, u.Role, clientIP(r))
 	writeJSON(w, http.StatusOK, map[string]any{
 		"token": token,
 		"user":  publicUser(u),
@@ -177,7 +187,7 @@ func (s *server) handleMe(w http.ResponseWriter, r *http.Request) {
 func (s *server) handleHosts(w http.ResponseWriter, r *http.Request) {
 	cid, err := s.targetCustomer(r)
 	if err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
+		writeScopeError(w, err)
 		return
 	}
 	hosts, err := s.db.ListHosts(r.Context(), cid)
@@ -191,7 +201,7 @@ func (s *server) handleHosts(w http.ResponseWriter, r *http.Request) {
 func (s *server) handleHost(w http.ResponseWriter, r *http.Request) {
 	cid, err := s.targetCustomer(r)
 	if err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
+		writeScopeError(w, err)
 		return
 	}
 	h, err := s.db.GetHost(r.Context(), cid, r.PathValue("ip"))
@@ -209,7 +219,7 @@ func (s *server) handleHost(w http.ResponseWriter, r *http.Request) {
 func (s *server) handleSearch(w http.ResponseWriter, r *http.Request) {
 	cid, err := s.targetCustomer(r)
 	if err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
+		writeScopeError(w, err)
 		return
 	}
 	hosts, err := s.db.ListHosts(r.Context(), cid)
@@ -225,7 +235,7 @@ func (s *server) handleSearch(w http.ResponseWriter, r *http.Request) {
 func (s *server) handleStats(w http.ResponseWriter, r *http.Request) {
 	cid, err := s.targetCustomer(r)
 	if err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
+		writeScopeError(w, err)
 		return
 	}
 	hosts, err := s.db.ListHosts(r.Context(), cid)
@@ -239,7 +249,7 @@ func (s *server) handleStats(w http.ResponseWriter, r *http.Request) {
 func (s *server) handleScans(w http.ResponseWriter, r *http.Request) {
 	cid, err := s.targetCustomer(r)
 	if err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
+		writeScopeError(w, err)
 		return
 	}
 	scans, err := s.db.ListScans(r.Context(), cid)
@@ -290,6 +300,8 @@ func (s *server) handleCreateCustomer(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "could not create customer")
 		return
 	}
+	log.Printf("audit: customer created user=%q id=%d by=%q ip=%s",
+		u.Username, u.ID, claimsFrom(r).Username, clientIP(r))
 	writeJSON(w, http.StatusCreated, publicUser(u))
 }
 
@@ -327,6 +339,8 @@ func (s *server) handleUpload(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "could not save scan")
 		return
 	}
+	log.Printf("audit: scan uploaded file=%q hosts=%d customer=%d by=%q ip=%s",
+		header.Filename, len(hosts), customerID, claimsFrom(r).Username, clientIP(r))
 	writeJSON(w, http.StatusOK, map[string]any{
 		"scan":        scan,
 		"hostsParsed": len(hosts),
@@ -339,19 +353,46 @@ type ctxKey int
 
 const claimsKey ctxKey = 0
 
+// errForbidden marks a scoping failure that must answer 403 rather than 400.
+var errForbidden = errors.New("access denied")
+
 // targetCustomer resolves which customer's data a request should read: a
-// customer always sees their own; an admin must pass ?customerId=.
+// customer always sees their own (any ?customerId= they send is ignored); an
+// admin must name an existing customer. Every other case is denied — a role the
+// switch does not know about, or claims that never passed through the auth
+// middleware, must never fall through to the admin branch.
 func (s *server) targetCustomer(r *http.Request) (int64, error) {
 	c := claimsFrom(r)
-	if c.Role == db.RoleCustomer {
+	switch c.Role {
+	case db.RoleCustomer:
 		return c.UserID, nil
+
+	case db.RoleAdmin:
+		raw := r.URL.Query().Get("customerId")
+		if raw == "" {
+			return 0, errors.New("admin must specify customerId")
+		}
+		id, err := strconv.ParseInt(raw, 10, 64)
+		if err != nil {
+			return 0, errors.New("missing or invalid customerId")
+		}
+		if u, err := s.db.GetUser(r.Context(), id); err != nil || u.Role != db.RoleCustomer {
+			return 0, errors.New("customer not found")
+		}
+		return id, nil
+
+	default:
+		return 0, errForbidden
 	}
-	// admin
-	raw := r.URL.Query().Get("customerId")
-	if raw == "" {
-		return 0, errors.New("admin must specify customerId")
+}
+
+// writeScopeError turns a targetCustomer failure into the right status code.
+func writeScopeError(w http.ResponseWriter, err error) {
+	if errors.Is(err, errForbidden) {
+		writeError(w, http.StatusForbidden, err.Error())
+		return
 	}
-	return strconv.ParseInt(raw, 10, 64)
+	writeError(w, http.StatusBadRequest, err.Error())
 }
 
 func (s *server) authed(next http.HandlerFunc) http.Handler {
@@ -409,6 +450,32 @@ func publicUser(u db.User) map[string]any {
 	}
 }
 
+// mustEnv reads a required setting and stops the process when it is missing.
+// Credentials must never have a built-in fallback: a default that lives in the
+// source is a default anyone can read.
+func mustEnv(key string) string {
+	v := strings.TrimSpace(os.Getenv(key))
+	if v == "" {
+		log.Fatalf("%s is required — set it in the .env file next to docker-compose.yml", key)
+	}
+	return v
+}
+
+// clientIP reports the caller's address, preferring the first hop nginx records
+// in X-Forwarded-For. Only nginx talks to this service, so the header is ours.
+func clientIP(r *http.Request) string {
+	if fwd := r.Header.Get("X-Forwarded-For"); fwd != "" {
+		if first, _, ok := strings.Cut(fwd, ","); ok {
+			return strings.TrimSpace(first)
+		}
+		return strings.TrimSpace(fwd)
+	}
+	if host, _, err := net.SplitHostPort(r.RemoteAddr); err == nil {
+		return host
+	}
+	return r.RemoteAddr
+}
+
 func envOr(key, def string) string {
 	if v := os.Getenv(key); v != "" {
 		return v
@@ -424,17 +491,4 @@ func writeJSON(w http.ResponseWriter, status int, v any) {
 
 func writeError(w http.ResponseWriter, status int, msg string) {
 	writeJSON(w, status, map[string]string{"error": msg})
-}
-
-func cors(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Access-Control-Allow-Origin", "*")
-		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
-		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
-		if r.Method == http.MethodOptions {
-			w.WriteHeader(http.StatusNoContent)
-			return
-		}
-		next.ServeHTTP(w, r)
-	})
 }

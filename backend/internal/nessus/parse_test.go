@@ -91,3 +91,25 @@ func TestStats(t *testing.T) {
 		t.Errorf("stats critical: want 3, got %d", st.BySeverity["Critical"])
 	}
 }
+
+func TestSafeURLRejectsScriptSchemes(t *testing.T) {
+	for _, in := range []string{
+		"javascript:alert(document.cookie)",
+		"JavaScript:alert(1)",
+		"data:text/html,<script>alert(1)</script>",
+		"vbscript:msgbox(1)",
+		"  javascript:alert(1)",
+	} {
+		if got := safeURL(in); got != "" {
+			t.Errorf("safeURL(%q) = %q, want empty", in, got)
+		}
+	}
+	for _, in := range []string{
+		"https://www.tenable.com/plugins/nessus/12345",
+		"http://example.com/advisory",
+	} {
+		if got := safeURL(in); got != in {
+			t.Errorf("safeURL(%q) = %q, want it kept", in, got)
+		}
+	}
+}
