@@ -3,13 +3,13 @@ services:
     image: postgres:16-alpine
     container_name: afrashodan-postgres
     environment:
-      POSTGRES_USER: afrashodan
-      POSTGRES_PASSWORD: afrashodan
-      POSTGRES_DB: afrashodan
+      POSTGRES_USER: ${POSTGRES_USER:-afrashodan}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      POSTGRES_DB: ${POSTGRES_DB:-afrashodan}
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U afrashodan -d afrashodan"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-afrashodan} -d ${POSTGRES_DB:-afrashodan}"]
       interval: 5s
       timeout: 3s
       retries: 10
@@ -25,14 +25,15 @@ services:
         condition: service_healthy
     environment:
       AFRASHODAN_ADDR: ":8080"
-      DATABASE_URL: "postgres://afrashodan:afrashodan@postgres:5432/afrashodan?sslmode=disable"
-      # CHANGE THESE in production.
-      JWT_SECRET: "change-me-to-a-long-random-secret"
-      ADMIN_USER: "admin"
-      ADMIN_PASSWORD: "admin12345"
+      DATABASE_URL: "postgres://${POSTGRES_USER:-afrashodan}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-afrashodan}?sslmode=disable"
+      # Secrets come from the .env file next to this compose file — never commit it.
+      JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET in .env}
+      ADMIN_USER: ${ADMIN_USER:-admin}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:?set ADMIN_PASSWORD in .env}
       # Optional demo customer, seeded with the bundled sample scan on first boot.
-      DEMO_USER: "demo"
-      DEMO_PASSWORD: "demo12345"
+      # Leave both empty (the default) to skip it in production.
+      DEMO_USER: ${DEMO_USER:-}
+      DEMO_PASSWORD: ${DEMO_PASSWORD:-}
       AFRASHODAN_SEED: "/app/data/sample.nessus"
     ports:
       - "8080:8080"          # exposed for direct API access / debugging

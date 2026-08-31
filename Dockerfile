@@ -8,9 +8,10 @@ RUN corepack enable
 # Same origin as nginx: api.ts uses relative /api/* URLs when VITE_API_URL="".
 ENV VITE_API_URL=""
 
-COPY package.json pnpm-workspace.yaml ./
-# No committed lockfile in this bundle — resolve fresh, allow native postinstalls.
-RUN pnpm config set dangerouslyAllowAllBuilds true && pnpm install
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
+# Install exactly what the lockfile pins, and allow native postinstalls
+# (@tailwindcss/oxide, lightningcss) to run.
+RUN pnpm config set dangerouslyAllowAllBuilds true && pnpm install --frozen-lockfile
 
 COPY . .
 RUN pnpm build

@@ -70,13 +70,15 @@
     "world-atlas": "^2.0.2"
   },
   "devDependencies": {
-    "@rollup/rollup-darwin-arm64": "^4.62.2",
-    "@tailwindcss/oxide-darwin-arm64": "^4.3.2",
     "@tailwindcss/vite": "4.1.12",
     "@vitejs/plugin-react": "4.7.0",
-    "lightningcss-darwin-arm64": "^1.32.0",
     "tailwindcss": "4.1.12",
     "vite": "6.3.5"
+  },
+  "optionalDependencies": {
+    "@rollup/rollup-darwin-arm64": "^4.62.2",
+    "@tailwindcss/oxide-darwin-arm64": "^4.3.2",
+    "lightningcss-darwin-arm64": "^1.32.0"
   },
   "peerDependencies": {
     "react": "18.3.1",

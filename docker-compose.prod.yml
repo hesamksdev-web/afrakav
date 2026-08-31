@@ -1,0 +1,16 @@
+# Production overlay for the company servers (private IPs).
+#   docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+services:
+  postgres:
+    # Never reachable from the network — only the backend talks to it.
+    ports: []
+
+  backend:
+    # Bind the API to loopback only; users reach it through nginx at /api/.
+    ports:
+      - "127.0.0.1:8080:8080"
+
+  frontend:
+    # Users open http://<server-private-ip>/
+    ports:
+      - "80:80"
