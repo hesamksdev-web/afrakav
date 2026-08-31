@@ -6,9 +6,10 @@ services:
     ports: []
 
   backend:
-    # Bind the API to loopback only; users reach it through nginx at /api/.
-    ports:
-      - "127.0.0.1:8080:8080"
+    # Not published on the host at all — nginx reaches it as backend:8080 over
+    # the compose network, and users hit it through /api/ on port 80.
+    # (Publishing 8080 clashed with an existing service on the company server.)
+    ports: []
 
   frontend:
     # Users open http://<server-private-ip>/
