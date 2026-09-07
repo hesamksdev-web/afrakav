@@ -3,7 +3,7 @@ import {
   Search, Shield, AlertTriangle, X,
   ChevronDown, ChevronUp, CheckCircle,
   Cpu, Wifi, ExternalLink, Tag, Activity,
-  Building, LogOut, Loader2, Zap,
+  Building, LogOut, Loader2, Zap, ArrowRight, LayoutDashboard,
 } from "lucide-react";
 import { fetchHosts, safeHref, HostRecord, Severity } from "./api";
 import { AuthProvider, useAuth } from "./auth";
@@ -157,9 +157,10 @@ function Home({ hosts, loading, onSearch, username, onLogout }: {
 
 // ── Search results page (when query doesn't exactly match one IP) ──────────
 function SearchResults({
-  query, results, onSelect, onSearch,
+  query, results, onSelect, onSearch, onHome,
 }: {
-  query: string; results: HostRecord[]; onSelect: (h: HostRecord) => void; onSearch: (q: string) => void;
+  query: string; results: HostRecord[]; onSelect: (h: HostRecord) => void;
+  onSearch: (q: string) => void; onHome: () => void;
 }) {
   const [q, setQ] = useState(query);
   return (
@@ -167,9 +168,13 @@ function SearchResults({
       {/* Top bar */}
       <header className="sticky top-0 z-40 border-b border-border bg-card">
         <div className="max-w-6xl mx-auto px-4 py-2.5 flex items-center gap-3">
-          <button onClick={() => onSearch("")} className="flex items-center gap-1.5 flex-shrink-0">
+          <button onClick={onHome} title="بازگشت به داشبورد" className="flex items-center gap-1.5 flex-shrink-0">
             <Shield size={14} className="text-primary" />
             <span className="font-mono font-bold text-primary text-sm tracking-widest hidden sm:block" dir="ltr">AFRANET</span>
+          </button>
+          <button onClick={onHome}
+            className="flex items-center gap-1.5 flex-shrink-0 text-xs text-muted-foreground hover:text-primary border border-border hover:border-primary/30 rounded px-2 py-1.5 transition-colors">
+            <LayoutDashboard size={12} /> <span className="hidden sm:block">داشبورد</span>
           </button>
           <form className="flex-1 flex items-center bg-secondary border border-border rounded overflow-hidden focus-within:border-primary/40 transition-colors max-w-2xl" onSubmit={e => { e.preventDefault(); onSearch(q); }}>
             <span className="px-3 text-muted-foreground flex-shrink-0"><Search size={13} /></span>
@@ -226,7 +231,7 @@ function SearchResults({
               <Search size={36} className="text-muted-foreground mb-4 opacity-20" />
               <p className="text-sm text-foreground mb-1">نتیجه‌ای برای «<span dir="ltr" className="font-mono">{query}</span>» یافت نشد</p>
               <p className="text-xs text-muted-foreground">این IP یا میزبان در اسکن بارگذاری‌شده وجود ندارد</p>
-              <button onClick={() => onSearch("")} className="mt-4 text-xs text-primary hover:underline">→ بازگشت به جست‌وجو</button>
+              <button onClick={onHome} className="mt-4 text-xs text-primary hover:underline">بازگشت به داشبورد</button>
             </div>
           ) : (
             results.map(h => {
@@ -297,7 +302,10 @@ function SearchResults({
 }
 
 // ── Host detail page (Shodan-style) ────────────────────────────────────────
-function HostPage({ host, onBack, onSearch }: { host: HostRecord; onBack: () => void; onSearch: (q: string) => void }) {
+function HostPage({ host, onBack, backLabel, onHome, onSearch }: {
+  host: HostRecord; onBack: () => void; backLabel: string;
+  onHome: () => void; onSearch: (q: string) => void;
+}) {
   const [openPort, setOpenPort] = useState<number | null>(null);
   const [vulnFilter, setVulnFilter] = useState<Sev | "All" | "Exploit">("All");
   const [q, setQ] = useState(host.ip);
@@ -314,9 +322,13 @@ function HostPage({ host, onBack, onSearch }: { host: HostRecord; onBack: () => 
       {/* Top nav */}
       <header className="sticky top-0 z-40 border-b border-border bg-card">
         <div className="max-w-6xl mx-auto px-4 py-2.5 flex items-center gap-3">
-          <button onClick={onBack} className="flex items-center gap-1.5 flex-shrink-0">
+          <button onClick={onHome} title="بازگشت به داشبورد" className="flex items-center gap-1.5 flex-shrink-0">
             <Shield size={14} className="text-primary" />
             <span className="font-mono font-bold text-primary text-sm tracking-widest hidden sm:block" dir="ltr">AFRANET</span>
+          </button>
+          <button onClick={onBack}
+            className="flex items-center gap-1.5 flex-shrink-0 text-xs text-muted-foreground hover:text-primary border border-border hover:border-primary/30 rounded px-2 py-1.5 transition-colors">
+            <ArrowRight size={12} /> <span className="hidden sm:block">{backLabel}</span>
           </button>
           <form onSubmit={e => { e.preventDefault(); onSearch(q); }} className="flex-1 flex items-center bg-secondary border border-border rounded overflow-hidden focus-within:border-primary/40 transition-colors max-w-2xl">
             <span className="px-3 text-muted-foreground flex-shrink-0"><Search size={13} /></span>
@@ -542,6 +554,9 @@ function CustomerApp() {
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<HostRecord[]>([]);
   const [selectedHost, setSelectedHost] = useState<HostRecord | null>(null);
+  // Where the host page should return to. Opening a host straight from the
+  // dashboard used to land the visitor on a results list they never asked for.
+  const [hostOrigin, setHostOrigin] = useState<"home" | "results">("home");
   // `hosts` holds ONLY this customer's hosts — the backend scopes the response
   // by the authenticated user, so a tenant can never see another's IPs.
   const [hosts, setHosts] = useState<HostRecord[]>([]);
@@ -562,7 +577,13 @@ function CustomerApp() {
 
     // Exact IP match → go straight to host page
     const exact = hosts.find(h => h.ip === lower);
-    if (exact) { setSelectedHost(exact); setScreen("host"); setQuery(q); return; }
+    if (exact) {
+      setSelectedHost(exact);
+      setHostOrigin(screen === "results" ? "results" : "home");
+      setScreen("host");
+      setQuery(q);
+      return;
+    }
 
     // Filter scan data
     const found = hosts.filter(h => {
@@ -621,6 +642,7 @@ function CustomerApp() {
   const selectHost = (h: HostRecord) => {
     setSelectedHost(h);
     setQuery(h.ip);
+    setHostOrigin("results");
     setScreen("host");
   };
 
@@ -634,13 +656,16 @@ function CustomerApp() {
       results={results.length > 0 ? results : hosts}
       onSelect={selectHost}
       onSearch={doSearch}
+      onHome={() => setScreen("home")}
     />
   );
 
   if (screen === "host" && selectedHost) return (
     <HostPage
       host={selectedHost}
-      onBack={() => setScreen("results")}
+      onBack={() => setScreen(hostOrigin)}
+      backLabel={hostOrigin === "results" ? "بازگشت به نتایج" : "بازگشت به داشبورد"}
+      onHome={() => setScreen("home")}
       onSearch={doSearch}
     />
   );
