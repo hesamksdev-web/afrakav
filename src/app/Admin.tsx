@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import {
-  Shield, LogOut, UserPlus, Upload, Users, Server, FileText,
+  LogOut, UserPlus, Upload, Users, Server, FileText,
   Loader2, CheckCircle, AlertTriangle, RefreshCw, KeyRound, Ban, Undo2,
   SlidersHorizontal, ShieldCheck, ShieldOff,
 } from "lucide-react";
@@ -9,6 +9,7 @@ import {
   Customer, listCustomers, createCustomer, adminUpload,
   resetCustomerPassword, setCustomerStatus, resetCustomerTwoFactor,
 } from "./api";
+import Brand from "./components/Brand";
 import ThemeToggle from "./components/ThemeToggle";
 import Settings from "./Settings";
 import AccessRequests from "./components/AccessRequests";
@@ -34,8 +35,7 @@ export default function Admin() {
       {/* Nav */}
       <nav className="border-b border-border bg-card">
         <div className="max-w-6xl mx-auto px-4 py-3 flex items-center gap-3">
-          <Shield size={16} className="text-primary" />
-          <span className="font-mono font-bold text-primary tracking-widest text-sm" dir="ltr">AFRANET</span>
+          <Brand className="h-7" />
           <span className="text-[11px] text-muted-foreground border-s border-border ps-2">مدیریت</span>
           <div className="ms-auto flex items-center gap-4">
             <span className="text-xs font-mono text-muted-foreground hidden sm:block" dir="ltr">{user?.username}</span>

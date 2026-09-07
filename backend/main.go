@@ -1,4 +1,4 @@
-// Command afrakav is the Go backend for the Afranet exposure-intelligence
+// Command afrakav is the Go backend for the Afranet vulnerability-management
 // platform. It is multi-tenant: an admin uploads Nessus (.nessus) scans and
 // assigns each to a customer; customers log in and see ONLY their own hosts.
 //

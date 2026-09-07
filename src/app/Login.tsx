@@ -1,6 +1,7 @@
 import { useState } from "react";
-import { Shield, Lock, User as UserIcon, Loader2, ShieldCheck, ArrowRight } from "lucide-react";
+import { Lock, User as UserIcon, Loader2, ShieldCheck, ArrowRight } from "lucide-react";
 import { useAuth } from "./auth";
+import Brand from "./components/Brand";
 import ThemeToggle from "./components/ThemeToggle";
 import AccessRequest from "./AccessRequest";
 
@@ -55,12 +56,11 @@ export default function Login() {
       <div className="w-full max-w-sm">
         {/* Brand */}
         <div className="flex items-center justify-center gap-2 mb-1">
-          <Shield size={20} className="text-primary" />
-          <span className="font-mono font-bold text-primary tracking-widest text-lg" dir="ltr">AFRANET</span>
+          <Brand className="h-10" />
           <span className="text-[12px] text-muted-foreground border-s border-border ps-2 ms-1">افراکاو</span>
         </div>
         <p className="text-center text-xs text-muted-foreground mb-8">
-          سامانهٔ هوش سطح حمله — ورود مشتریان و مدیران
+          سامانهٔ مدیریت آسیب‌پذیری — ورود مشتریان و مدیران
         </p>
 
         {requesting ? (

@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import {
-  Search, Shield, AlertTriangle, X,
+  Search, AlertTriangle, X,
   ChevronDown, ChevronUp, CheckCircle,
   Cpu, Wifi, ExternalLink, Tag, Activity,
   Building, LogOut, Loader2, Zap, ArrowRight, LayoutDashboard, SlidersHorizontal,
@@ -10,6 +10,7 @@ import { AuthProvider, useAuth } from "./auth";
 import Login from "./Login";
 import Admin from "./Admin";
 import Dashboard, { ExploitBadges } from "./components/Dashboard";
+import Brand from "./components/Brand";
 import ThemeToggle from "./components/ThemeToggle";
 import Settings from "./Settings";
 
@@ -73,8 +74,7 @@ function BrandNav({ username, onLogout, onSettings, maxW = "max-w-5xl" }: {
     <nav className="border-b border-border bg-card">
       <div className={`${maxW} mx-auto px-4 py-3 flex items-center gap-6`}>
         <div className="flex items-center gap-2">
-          <Shield size={16} className="text-primary" />
-          <span className="font-mono font-bold text-primary tracking-widest text-sm" dir="ltr">AFRANET</span>
+          <Brand className="h-7" />
           <span className="text-[11px] text-muted-foreground border-s border-border ps-2">افراکاو</span>
         </div>
         <div className="ms-auto flex items-center gap-4">
@@ -155,7 +155,7 @@ function Home({ hosts, loading, onSearch, username, onLogout, onSettings }: {
       </div>
 
       <footer className="border-t border-border py-4 px-4 text-center text-[12px] text-muted-foreground">
-        افرانت ® افراکاو — هوش سطح حمله · مبتنی بر Nessus · <span dir="ltr">soc@afranet.io</span>
+        افرانت ® افراکاو — مدیریت آسیب‌پذیری · مبتنی بر Nessus · <span dir="ltr">soc@afranet.io</span>
       </footer>
     </div>
   );
@@ -175,8 +175,7 @@ function SearchResults({
       <header className="sticky top-0 z-40 border-b border-border bg-card">
         <div className="max-w-6xl mx-auto px-4 py-2.5 flex items-center gap-3">
           <button onClick={onHome} title="بازگشت به داشبورد" className="flex items-center gap-1.5 flex-shrink-0">
-            <Shield size={14} className="text-primary" />
-            <span className="font-mono font-bold text-primary text-sm tracking-widest hidden sm:block" dir="ltr">AFRANET</span>
+            <Brand className="h-6" />
           </button>
           <button onClick={onHome}
             className="flex items-center gap-1.5 flex-shrink-0 text-xs text-muted-foreground hover:text-primary border border-border hover:border-primary/30 rounded px-2 py-1.5 transition-colors">
@@ -329,8 +328,7 @@ function HostPage({ host, onBack, backLabel, onHome, onSearch }: {
       <header className="sticky top-0 z-40 border-b border-border bg-card">
         <div className="max-w-6xl mx-auto px-4 py-2.5 flex items-center gap-3">
           <button onClick={onHome} title="بازگشت به داشبورد" className="flex items-center gap-1.5 flex-shrink-0">
-            <Shield size={14} className="text-primary" />
-            <span className="font-mono font-bold text-primary text-sm tracking-widest hidden sm:block" dir="ltr">AFRANET</span>
+            <Brand className="h-6" />
           </button>
           <button onClick={onBack}
             className="flex items-center gap-1.5 flex-shrink-0 text-xs text-muted-foreground hover:text-primary border border-border hover:border-primary/30 rounded px-2 py-1.5 transition-colors">

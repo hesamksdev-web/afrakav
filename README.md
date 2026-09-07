@@ -1,6 +1,6 @@
 # Afranet — Afrakav
 
-A Shodan-style **multi-tenant exposure-intelligence platform** for Afranet. An admin
+A Shodan-style **multi-tenant vulnerability-management platform** for Afranet. An admin
 uploads Tenable **Nessus** (`.nessus`) scans and assigns each to a customer; customers
 log in and see **only their own** hosts — searching by IP, hostname, or CVE and
 reviewing every open port, service banner, and vulnerability finding.

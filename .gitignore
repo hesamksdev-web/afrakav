@@ -22,3 +22,6 @@ certs/
 # and format variants. Only the variable webfont the app actually loads is
 # committed, under src/assets/fonts/ with its licence beside it.
 DanaPro(13Wt)/
+
+# Source artwork dropped in the repo root; the app loads src/assets/afranet-logo.webp
+new-logo.webp
