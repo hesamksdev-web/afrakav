@@ -1,12 +1,13 @@
 import { useEffect, useRef, useState } from "react";
 import {
   ShieldCheck, ShieldOff, KeyRound, Loader2, CheckCircle, AlertTriangle,
-  Copy, Download, ArrowRight, Smartphone,
+  Copy, Download, ArrowRight, Smartphone, History,
 } from "lucide-react";
 import QRCode from "qrcode";
 import { useAuth } from "./auth";
 import {
   startTwoFactorSetup, enableTwoFactor, disableTwoFactor, changePassword, me,
+  AuditEvent, listMyEvents, EVENT_ACTION_FA, EVENT_OUTCOME_FA,
 } from "./api";
 
 const faNum = (n: number) => n.toLocaleString("fa-IR");
@@ -35,7 +36,51 @@ export default function Settings({ onBack }: { onBack: () => void }) {
         onChanged={() => { refresh(); }}
       />
       <PasswordCard />
+      <ActivityCard />
     </div>
+  );
+}
+
+// The account's own security activity — logins, password and two-factor
+// changes — so a customer can notice a sign-in they do not recognise without
+// having to ask an admin to check the log for them.
+function ActivityCard() {
+  const [events, setEvents] = useState<AuditEvent[] | null>(null);
+
+  useEffect(() => {
+    listMyEvents().then(r => setEvents(r.events)).catch(() => setEvents([]));
+  }, []);
+
+  return (
+    <section className="bg-card border border-border rounded overflow-hidden">
+      <div className="px-4 py-3 border-b border-border bg-secondary/20 flex items-center gap-2">
+        <History size={14} className="text-primary" />
+        <span className="text-xs font-semibold text-foreground">فعالیت اخیر حساب</span>
+      </div>
+      <div className="p-4">
+        {events === null ? (
+          <div className="py-4 flex justify-center text-muted-foreground"><Loader2 size={16} className="animate-spin" /></div>
+        ) : events.length === 0 ? (
+          <p className="text-[12px] text-muted-foreground">هنوز فعالیتی ثبت نشده است.</p>
+        ) : (
+          <ul className="space-y-2">
+            {events.slice(0, 15).map(e => (
+              <li key={e.id} className="flex items-center gap-2 text-[12px]">
+                <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${
+                  e.outcome === "success" ? "bg-primary" : "bg-[#ff3b3b]"
+                }`} />
+                <span className="text-foreground flex-1">{EVENT_ACTION_FA[e.action] ?? e.action}</span>
+                <span className="text-muted-foreground">{EVENT_OUTCOME_FA[e.outcome] ?? e.outcome}</span>
+                <span className="text-muted-foreground font-mono whitespace-nowrap" dir="ltr">
+                  {new Date(e.occurredAt).toLocaleString("fa-IR")}
+                </span>
+                <span className="text-muted-foreground font-mono whitespace-nowrap hidden sm:inline" dir="ltr">{e.ip}</span>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+    </section>
   );
 }
 

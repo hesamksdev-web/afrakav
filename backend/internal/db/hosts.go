@@ -47,11 +47,11 @@ func (d *DB) SaveScan(ctx context.Context, customerID int64, filename string, ho
 			return Scan{}, err
 		}
 		if _, err := tx.Exec(ctx,
-			`INSERT INTO hosts (customer_id, ip, data, updated_at)
-			 VALUES ($1, $2, $3, now())
+			`INSERT INTO hosts (customer_id, ip, data, scan_id, updated_at)
+			 VALUES ($1, $2, $3, $4, now())
 			 ON CONFLICT (customer_id, ip)
-			 DO UPDATE SET data = EXCLUDED.data, updated_at = now()`,
-			customerID, h.IP, payload,
+			 DO UPDATE SET data = EXCLUDED.data, scan_id = EXCLUDED.scan_id, updated_at = now()`,
+			customerID, h.IP, payload, scan.ID,
 		); err != nil {
 			return Scan{}, err
 		}
@@ -61,6 +61,41 @@ func (d *DB) SaveScan(ctx context.Context, customerID int64, filename string, ho
 		return Scan{}, err
 	}
 	return scan, nil
+}
+
+// DeleteScan undoes an upload: it removes the scan record and every host still
+// pointing at it as the source of its current data (a host later touched by a
+// different scan is left alone). This is the recovery path for the two things
+// that make an upload dangerous to leave in place — a file assigned to the
+// wrong customer, or hosts that should never have been merged in.
+func (d *DB) DeleteScan(ctx context.Context, customerID, scanID int64) (hostsRemoved int64, err error) {
+	tx, err := d.pool.Begin(ctx)
+	if err != nil {
+		return 0, err
+	}
+	defer tx.Rollback(ctx)
+
+	var exists bool
+	if err := tx.QueryRow(ctx,
+		`SELECT EXISTS(SELECT 1 FROM scans WHERE id = $1 AND customer_id = $2)`,
+		scanID, customerID).Scan(&exists); err != nil {
+		return 0, err
+	}
+	if !exists {
+		return 0, ErrNotFound
+	}
+
+	tag, err := tx.Exec(ctx,
+		`DELETE FROM hosts WHERE customer_id = $1 AND scan_id = $2`, customerID, scanID)
+	if err != nil {
+		return 0, err
+	}
+	hostsRemoved = tag.RowsAffected()
+
+	if _, err := tx.Exec(ctx, `DELETE FROM scans WHERE id = $1`, scanID); err != nil {
+		return 0, err
+	}
+	return hostsRemoved, tx.Commit(ctx)
 }
 
 // ListHosts returns every host owned by a customer, newest-updated first.

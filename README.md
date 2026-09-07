@@ -106,6 +106,30 @@ If a customer loses both their authenticator and their recovery codes, an admin
 clears the second factor from the customer row in the admin panel; nobody can
 read the secret back out.
 
+## Security events
+
+Every login, logout, admin action, and admin view of a customer's data is
+recorded to an append-only `audit_events` table — a database trigger refuses
+any `UPDATE` or `DELETE` against it, and each row's hash commits to the row
+before it, so an edited or deleted row breaks the chain visibly rather than
+disappearing quietly. Logging out revokes that session's token immediately
+(via its `jti`) rather than only forgetting it client-side.
+
+Admins read the full log from **رویدادها** in the admin panel (`GET
+/api/admin/events`), filterable by action, outcome, actor, customer, and time.
+Every account — admin or customer — sees its own activity (logins, password
+and two-factor changes) from **تنظیمات** (`GET /api/events`).
+
+## Undoing an upload
+
+Uploading a scan merges it into a customer's current view: a host present in
+the new file is overwritten with the new data, a host missing from it is left
+as-is, and nothing else is deleted. Each host record remembers which scan last
+touched it, so a file assigned to the wrong customer, or one whose findings
+should never have merged in, can be undone from the customer's scan history in
+the admin panel — deleting a scan removes only the hosts still pointing at it,
+not ones a later upload has since overwritten.
+
 ## Backend API
 
 Public:
@@ -122,11 +146,13 @@ Authenticated (`Authorization: Bearer <token>`):
 | Method | Path               | Description                                             |
 |--------|--------------------|---------------------------------------------------------|
 | GET    | `/api/me`          | current user                                            |
+| POST   | `/api/logout`      | revoke this session's token immediately                 |
 | GET    | `/api/hosts`       | caller's hosts (admin may pass `?customerId=`)          |
 | GET    | `/api/hosts/{ip}`  | one host by IP, scoped                                  |
 | GET    | `/api/search?q=`   | Shodan-style query, scoped                              |
 | GET    | `/api/stats`       | dashboard aggregates, scoped                            |
 | GET    | `/api/scans`       | upload history, scoped                                  |
+| GET    | `/api/events`      | caller's own security activity (logins, password/2FA changes) |
 | POST   | `/api/password`    | `{currentPassword,newPassword}` → a replacement token   |
 | POST   | `/api/2fa/setup`   | begin enrolment → `{secret, uri}`                       |
 | POST   | `/api/2fa/enable`  | `{code}` → `{token, recoveryCodes}`                     |
@@ -139,12 +165,14 @@ Admin only:
 | GET    | `/api/admin/customers`   | list customers with host/scan counts              |
 | POST   | `/api/admin/customers`   | `{username,password,displayName}`                 |
 | POST   | `/api/admin/upload`      | multipart: `file=.nessus`, `customerId=<id>`      |
+| POST   | `/api/admin/scans/{id}/delete` | `{customerId}` — undo an upload; removes hosts still pointing at it |
 | POST   | `/api/admin/customers/{id}/password` | `{password}` — also ends that customer's sessions |
 | POST   | `/api/admin/customers/{id}/status`   | `{disabled}` — suspend or restore an account      |
 | POST   | `/api/admin/customers/{id}/2fa/reset`| clear a second factor the customer is locked out of |
 | GET    | `/api/admin/access-requests`         | `?status=pending|approved|rejected`, newest first |
 | POST   | `/api/admin/access-requests/{id}/approve` | `{username,password,displayName}` → creates the customer |
 | POST   | `/api/admin/access-requests/{id}/reject`  | decline a pending request        |
+| GET    | `/api/admin/events`      | full security event log, filterable by action/outcome/actor/customer/time |
 
 **Search grammar:** `port:445`, `tag:rdp`, `vuln:CVE-2021-44228`, `cve:…`,
 `product:jenkins`, `os:windows`, `subnet:10.20.30` (a /24, `net:` also works),

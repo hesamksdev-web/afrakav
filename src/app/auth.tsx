@@ -10,7 +10,7 @@ interface AuthState {
   login: (username: string, password: string) => Promise<LoginResult>;
   /** Completes a login that stopped for a second factor. */
   verifyCode: (challenge: string, code: string) => Promise<void>;
-  logout: () => void;
+  logout: () => Promise<void>;
   /** Re-reads the account, e.g. after two-factor is switched on or off. */
   refresh: () => Promise<void>;
 }
@@ -46,9 +46,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUser(await verifyLoginCode(challenge, code));
   };
 
-  const logout = () => {
-    apiLogout();
+  const logout = async () => {
+    // Clear the local session immediately so the UI reacts at once; the
+    // server-side revocation happens either way inside apiLogout's finally.
     setUser(null);
+    await apiLogout();
   };
 
   return (

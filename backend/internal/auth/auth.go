@@ -5,6 +5,7 @@ package auth
 
 import (
 	"crypto/hmac"
+	"crypto/rand"
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
@@ -42,6 +43,18 @@ type Claims struct {
 	Version  int    `json:"ver"` // must still match the user's token_version
 	Purpose  string `json:"pur"` // PurposeSession or PurposeMFA
 	Exp      int64  `json:"exp"` // unix seconds
+	JTI      string `json:"jti"` // unique per token, so a single session can be revoked (logout)
+}
+
+// newJTI returns a random per-token identifier used for revocation.
+func newJTI() string {
+	buf := make([]byte, 16)
+	if _, err := rand.Read(buf); err != nil {
+		// crypto/rand failing is effectively unrecoverable; a predictable jti is
+		// still better than crashing issuance.
+		return b64.EncodeToString([]byte(time.Now().String()))
+	}
+	return b64.EncodeToString(buf)
 }
 
 // ErrInvalidToken is returned for malformed, tampered, or expired tokens.
@@ -81,6 +94,7 @@ func (i *Issuer) issue(userID int64, username, role string, version int, purpose
 		Version:  version,
 		Purpose:  purpose,
 		Exp:      now.Add(ttl).Unix(),
+		JTI:      newJTI(),
 	}
 	payloadJSON, err := json.Marshal(claims)
 	if err != nil {

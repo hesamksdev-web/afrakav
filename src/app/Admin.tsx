@@ -2,17 +2,19 @@ import { useEffect, useRef, useState } from "react";
 import {
   LogOut, UserPlus, Upload, Users, Server, FileText,
   Loader2, CheckCircle, AlertTriangle, RefreshCw, KeyRound, Ban, Undo2,
-  SlidersHorizontal, ShieldCheck, ShieldOff,
+  SlidersHorizontal, ShieldCheck, ShieldOff, Trash2, History,
 } from "lucide-react";
 import { useAuth } from "./auth";
 import {
-  Customer, listCustomers, createCustomer, adminUpload,
+  Customer, Scan, listCustomers, createCustomer, adminUpload,
   resetCustomerPassword, setCustomerStatus, resetCustomerTwoFactor,
+  fetchScans, deleteScan,
 } from "./api";
 import Brand from "./components/Brand";
 import ThemeToggle from "./components/ThemeToggle";
 import Settings from "./Settings";
 import AccessRequests from "./components/AccessRequests";
+import EventsPanel from "./components/EventsPanel";
 
 const faNum = (n: number) => n.toLocaleString("fa-IR");
 
@@ -134,6 +136,10 @@ export default function Admin() {
         </div>
       </div>
 
+      <div className="max-w-6xl mx-auto w-full px-4 pb-6">
+        <EventsPanel />
+      </div>
+
       <footer className="mt-auto border-t border-border py-4 px-4 text-center text-[12px] text-muted-foreground">
         افرانت ® افراکاو · پنل مدیریت
       </footer>
@@ -247,6 +253,7 @@ function UploadCard({ customers, onUploaded }: { customers: Customer[]; onUpload
 function CustomerActions({ customer, onChanged }: { customer: Customer; onChanged: () => void }) {
   const [busy, setBusy] = useState(false);
   const [resetting, setResetting] = useState(false);
+  const [scansOpen, setScansOpen] = useState(false);
   const [password, setPassword] = useState("");
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
 
@@ -303,6 +310,11 @@ function CustomerActions({ customer, onChanged }: { customer: Customer; onChange
             <ShieldOff size={13} />
           </button>
         )}
+        <button type="button" onClick={() => { setScansOpen(v => !v); setMsg(null); }} disabled={busy}
+          title="مدیریت اسکن‌ها — بازگردانی یک بارگذاری اشتباه"
+          className="text-muted-foreground hover:text-primary transition-colors disabled:opacity-40">
+          <History size={13} />
+        </button>
         <button type="button" onClick={toggle} disabled={busy}
           title={customer.disabled ? "فعال‌سازی حساب" : "غیرفعال‌سازی حساب"}
           className={`transition-colors disabled:opacity-40 ${
@@ -324,6 +336,60 @@ function CustomerActions({ customer, onChanged }: { customer: Customer; onChange
         </form>
       )}
 
+      {scansOpen && <ScansList customer={customer} onChanged={onChanged} />}
+
+      {msg && <Msg msg={msg} />}
+    </div>
+  );
+}
+
+// Undoes an upload made to the wrong customer, or one whose hosts should never
+// have merged into this tenant's current view. Deleting a scan only removes
+// the hosts still pointing at it as their latest data — a host later touched
+// by a different scan is left alone.
+function ScansList({ customer, onChanged }: { customer: Customer; onChanged: () => void }) {
+  const [scans, setScans] = useState<Scan[] | null>(null);
+  const [busyId, setBusyId] = useState<number | null>(null);
+  const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
+
+  useEffect(() => {
+    fetchScans(customer.id).then(setScans).catch(() => setScans([]));
+  }, [customer.id]);
+
+  const remove = async (scan: Scan) => {
+    if (!confirm(`اسکن «${scan.filename}» حذف شود؟ میزبان‌هایی که هنوز داده‌شان از همین اسکن است حذف می‌شوند.`)) return;
+    setBusyId(scan.id); setMsg(null);
+    try {
+      const res = await deleteScan(scan.id, customer.id);
+      setScans(s => (s ?? []).filter(x => x.id !== scan.id));
+      setMsg({ ok: true, text: `حذف شد — ${faNum(res.hostsRemoved)} میزبان برداشته شد.` });
+      onChanged();
+    } catch (err: any) {
+      setMsg({ ok: false, text: err?.message || "حذف اسکن ناموفق بود" });
+    } finally { setBusyId(null); }
+  };
+
+  return (
+    <div dir="rtl" className="w-full border border-border rounded bg-secondary/10 p-2 space-y-1">
+      {scans === null ? (
+        <div className="py-3 flex justify-center text-muted-foreground"><Loader2 size={14} className="animate-spin" /></div>
+      ) : scans.length === 0 ? (
+        <div className="py-2 text-center text-[11px] text-muted-foreground">اسکنی ثبت نشده است.</div>
+      ) : (
+        scans.map(s => (
+          <div key={s.id} className="flex items-center gap-2 text-[11px] py-1 px-1.5 rounded hover:bg-secondary/30">
+            <span className="flex-1 min-w-0 truncate font-mono text-foreground" dir="ltr">{s.filename}</span>
+            <span className="text-muted-foreground">{faNum(s.hostsCount)} میزبان</span>
+            <span className="text-muted-foreground whitespace-nowrap">
+              {new Date(s.uploadedAt).toLocaleDateString("fa-IR")}
+            </span>
+            <button type="button" onClick={() => remove(s)} disabled={busyId === s.id}
+              title="حذف این اسکن" className="text-muted-foreground hover:text-[#ff3b3b] transition-colors disabled:opacity-40">
+              {busyId === s.id ? <Loader2 size={12} className="animate-spin" /> : <Trash2 size={12} />}
+            </button>
+          </div>
+        ))
+      )}
       {msg && <Msg msg={msg} />}
     </div>
   );

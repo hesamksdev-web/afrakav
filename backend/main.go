@@ -13,11 +13,13 @@
 // Authenticated (Bearer token):
 //
 //	GET  /api/me                    current user
+//	POST /api/logout                revoke this session's token
 //	GET  /api/hosts                 caller's hosts (admin: ?customerId=)
 //	GET  /api/hosts/{ip}            one host, scoped
 //	GET  /api/search?q=             Shodan-style query, scoped
 //	GET  /api/stats                 dashboard aggregates, scoped
 //	GET  /api/scans                 upload history, scoped
+//	GET  /api/events                caller's own security activity
 //	POST /api/password              change your own password
 //	POST /api/2fa/setup             begin enrolment -> {secret,uri}
 //	POST /api/2fa/enable            {code} -> {token,recoveryCodes}
@@ -28,12 +30,14 @@
 //	GET  /api/admin/customers       list customers with counts
 //	POST /api/admin/customers       {username,password,displayName}
 //	POST /api/admin/upload          multipart: file=.nessus, customerId=<id>
+//	POST /api/admin/scans/{id}/delete         {customerId} — undo an upload
 //	POST /api/admin/customers/{id}/password   reset a customer's password
 //	POST /api/admin/customers/{id}/status     suspend or restore an account
 //	POST /api/admin/customers/{id}/2fa/reset  clear a locked-out second factor
 //	GET  /api/admin/access-requests           pending sign-up requests
 //	POST /api/admin/access-requests/{id}/approve  create the customer
 //	POST /api/admin/access-requests/{id}/reject   decline it
+//	GET  /api/admin/events                    the full security event log
 package main
 
 import (
@@ -50,6 +54,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/afranet/afrashodan/internal/audit"
 	"github.com/afranet/afrashodan/internal/auth"
 	"github.com/afranet/afrashodan/internal/db"
 	"github.com/afranet/afrashodan/internal/nessus"
@@ -127,11 +132,13 @@ func main() {
 	mux.HandleFunc("POST /api/access-request", srv.handleAccessRequest)
 
 	mux.Handle("GET /api/me", srv.authed(srv.handleMe))
+	mux.Handle("POST /api/logout", srv.authed(srv.handleLogout))
 	mux.Handle("GET /api/hosts", srv.authed(srv.handleHosts))
 	mux.Handle("GET /api/hosts/{ip}", srv.authed(srv.handleHost))
 	mux.Handle("GET /api/search", srv.authed(srv.handleSearch))
 	mux.Handle("GET /api/stats", srv.authed(srv.handleStats))
 	mux.Handle("GET /api/scans", srv.authed(srv.handleScans))
+	mux.Handle("GET /api/events", srv.authed(srv.handleMyEvents))
 	mux.Handle("POST /api/password", srv.authed(srv.handleChangePassword))
 	mux.Handle("POST /api/2fa/setup", srv.authed(srv.handleTOTPSetup))
 	mux.Handle("POST /api/2fa/enable", srv.authed(srv.handleTOTPEnable))
@@ -140,12 +147,14 @@ func main() {
 	mux.Handle("GET /api/admin/customers", srv.adminOnly(srv.handleListCustomers))
 	mux.Handle("POST /api/admin/customers", srv.adminOnly(srv.handleCreateCustomer))
 	mux.Handle("POST /api/admin/upload", srv.adminOnly(srv.handleUpload))
+	mux.Handle("POST /api/admin/scans/{id}/delete", srv.adminOnly(srv.handleDeleteScan))
 	mux.Handle("POST /api/admin/customers/{id}/password", srv.adminOnly(srv.handleResetPassword))
 	mux.Handle("POST /api/admin/customers/{id}/status", srv.adminOnly(srv.handleSetStatus))
 	mux.Handle("POST /api/admin/customers/{id}/2fa/reset", srv.adminOnly(srv.handleResetTOTP))
 	mux.Handle("GET /api/admin/access-requests", srv.adminOnly(srv.handleListAccessRequests))
 	mux.Handle("POST /api/admin/access-requests/{id}/approve", srv.adminOnly(srv.handleApproveRequest))
 	mux.Handle("POST /api/admin/access-requests/{id}/reject", srv.adminOnly(srv.handleRejectRequest))
+	mux.Handle("GET /api/admin/events", srv.adminOnly(srv.handleAdminEvents))
 
 	log.Printf("Afrashodan backend listening on %s", addr)
 	httpSrv := &http.Server{
@@ -159,6 +168,13 @@ func main() {
 // bootstrap creates the initial admin (and an optional demo customer + seed
 // scan) from environment variables the first time the platform runs.
 func (s *server) bootstrap(ctx context.Context) {
+	if err := s.db.PruneExpiredRevocations(ctx); err != nil {
+		log.Printf("bootstrap: prune revoked tokens: %v", err)
+	}
+	if err := s.db.RecordAuditEvent(ctx, audit.Event{Action: audit.ActionSystemStarted}); err != nil {
+		log.Printf("bootstrap: could not record system.started: %v", err)
+	}
+
 	adminUser := os.Getenv("ADMIN_USER")
 	adminPass := os.Getenv("ADMIN_PASSWORD")
 	if adminUser != "" && adminPass != "" {
@@ -171,10 +187,14 @@ func (s *server) bootstrap(ctx context.Context) {
 				return
 			}
 			hash, _ := auth.HashPassword(adminPass)
-			if _, err := s.db.CreateUser(ctx, adminUser, hash, db.RoleAdmin, "Administrator"); err != nil {
+			if u, err := s.db.CreateUser(ctx, adminUser, hash, db.RoleAdmin, "Administrator"); err != nil {
 				log.Printf("bootstrap admin: %v", err)
 			} else {
 				log.Printf("bootstrap: created admin %q", adminUser)
+				s.recordAuditBackground(ctx, audit.Event{
+					Action: audit.ActionBootstrapAdminCreated, ActorID: u.ID, ActorUsername: u.Username, ActorRole: u.Role,
+					TargetType: "user", TargetID: strconv.FormatInt(u.ID, 10), TargetLabel: u.Username,
+				})
 			}
 		}
 	}
@@ -191,12 +211,21 @@ func (s *server) bootstrap(ctx context.Context) {
 				return
 			}
 			log.Printf("bootstrap: created demo customer %q", demoUser)
+			s.recordAuditBackground(ctx, audit.Event{
+				Action: audit.ActionCustomerCreated, ActorRole: db.RoleAdmin, ActorUsername: "bootstrap",
+				TargetType: "user", TargetID: strconv.FormatInt(u.ID, 10), TargetLabel: u.Username, CustomerID: u.ID,
+			})
 			if seedFile != "" {
 				if f, err := os.Open(seedFile); err == nil {
 					defer f.Close()
 					if hosts, err := nessus.Parse(f); err == nil {
-						if _, err := s.db.SaveScan(ctx, u.ID, "sample.nessus", hosts); err == nil {
+						if scan, err := s.db.SaveScan(ctx, u.ID, "sample.nessus", hosts); err == nil {
 							log.Printf("bootstrap: seeded %d hosts for %q", len(hosts), demoUser)
+							s.recordAuditBackground(ctx, audit.Event{
+								Action: audit.ActionBootstrapDemoSeeded, ActorRole: db.RoleAdmin, ActorUsername: "bootstrap",
+								TargetType: "scan", TargetID: strconv.FormatInt(scan.ID, 10), TargetLabel: scan.Filename,
+								CustomerID: u.ID, Details: map[string]any{"hosts": len(hosts)},
+							})
 						}
 					}
 				}
@@ -227,12 +256,17 @@ func (s *server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		hash = dummyHash // spend the same bcrypt time on a username that does not exist
 	}
 	if !auth.CheckPassword(hash, body.Password) || err != nil {
-		log.Printf("audit: login failed user=%q ip=%s", username, clientIP(r))
+		s.recordAudit(r, audit.Event{
+			Action: audit.ActionLoginFailed, Outcome: audit.Failure, ActorUsername: username,
+		})
 		writeError(w, http.StatusUnauthorized, "invalid username or password")
 		return
 	}
 	if u.Disabled {
-		log.Printf("audit: login refused (disabled) user=%q ip=%s", username, clientIP(r))
+		s.recordAudit(r, audit.Event{
+			Action: audit.ActionLoginRefused, Outcome: audit.Denied,
+			ActorID: u.ID, ActorUsername: u.Username, ActorRole: u.Role,
+		})
 		writeError(w, http.StatusForbidden, "this account is suspended")
 		return
 	}
@@ -244,8 +278,9 @@ func (s *server) handleLogin(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusInternalServerError, "could not issue token")
 			return
 		}
-		log.Printf("audit: login password ok, awaiting second factor user=%q id=%d ip=%s",
-			u.Username, u.ID, clientIP(r))
+		s.recordAudit(r, audit.Event{
+			Action: audit.ActionLoginMFAChallenge, ActorID: u.ID, ActorUsername: u.Username, ActorRole: u.Role,
+		})
 		writeJSON(w, http.StatusOK, map[string]any{
 			"mfaRequired": true,
 			"challenge":   challenge,
@@ -258,7 +293,9 @@ func (s *server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "could not issue token")
 		return
 	}
-	log.Printf("audit: login ok user=%q id=%d role=%s ip=%s", u.Username, u.ID, u.Role, clientIP(r))
+	s.recordAudit(r, audit.Event{
+		Action: audit.ActionLoginSuccess, ActorID: u.ID, ActorUsername: u.Username, ActorRole: u.Role,
+	})
 	writeJSON(w, http.StatusOK, map[string]any{
 		"token": token,
 		"user":  publicUser(u),
@@ -289,7 +326,10 @@ func (s *server) handleLoginMFA(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if !s.checkSecondFactor(r, u, body.Code) {
-		log.Printf("audit: second factor failed user=%q id=%d ip=%s", u.Username, u.ID, clientIP(r))
+		s.recordAudit(r, audit.Event{
+			Action: audit.ActionLoginMFAFailed, Outcome: audit.Failure,
+			ActorID: u.ID, ActorUsername: u.Username, ActorRole: u.Role,
+		})
 		writeError(w, http.StatusUnauthorized, "the verification code is not correct")
 		return
 	}
@@ -307,8 +347,10 @@ func (s *server) handleLoginMFA(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "could not issue token")
 		return
 	}
-	log.Printf("audit: login ok (second factor) user=%q id=%d role=%s ip=%s",
-		fresh.Username, fresh.ID, fresh.Role, clientIP(r))
+	s.recordAudit(r, audit.Event{
+		Action: audit.ActionLoginSuccess, ActorID: fresh.ID, ActorUsername: fresh.Username, ActorRole: fresh.Role,
+		Details: map[string]any{"secondFactor": true},
+	})
 	writeJSON(w, http.StatusOK, map[string]any{
 		"token": token,
 		"user":  publicUser(fresh),
@@ -330,8 +372,10 @@ func (s *server) checkSecondFactor(r *http.Request, u db.User, code string) bool
 			return false
 		}
 		if !fresh {
-			log.Printf("audit: replayed second-factor code user=%q id=%d ip=%s",
-				u.Username, u.ID, clientIP(r))
+			s.recordAudit(r, audit.Event{
+				Action: audit.ActionLoginMFAReplay, Outcome: audit.Denied,
+				ActorID: u.ID, ActorUsername: u.Username, ActorRole: u.Role,
+			})
 		}
 		return fresh
 	}
@@ -343,8 +387,10 @@ func (s *server) checkSecondFactor(r *http.Request, u db.User, code string) bool
 	}
 	if used {
 		left, _ := s.db.CountRecoveryCodes(r.Context(), u.ID)
-		log.Printf("audit: recovery code used user=%q id=%d remaining=%d ip=%s",
-			u.Username, u.ID, left, clientIP(r))
+		s.recordAudit(r, audit.Event{
+			Action: audit.ActionRecoveryCodeUsed, ActorID: u.ID, ActorUsername: u.Username, ActorRole: u.Role,
+			Details: map[string]any{"remaining": left},
+		})
 	}
 	return used
 }
@@ -386,7 +432,10 @@ func (s *server) handleAccessRequest(w http.ResponseWriter, r *http.Request) {
 	// address should not be able to bury the admin panel.
 	since := time.Now().Add(-requestsPerIPSince)
 	if n, err := s.db.CountPendingRequestsSince(r.Context(), req.SourceIP, since); err == nil && n >= maxRequestsPerIP {
-		log.Printf("audit: access request throttled ip=%s existing=%d", req.SourceIP, n)
+		s.recordAudit(r, audit.Event{
+			Action: audit.ActionRequestThrottled, Outcome: audit.Denied,
+			Details: map[string]any{"existing": n},
+		})
 		writeError(w, http.StatusTooManyRequests, "too many requests from this address; please try again later")
 		return
 	}
@@ -397,8 +446,11 @@ func (s *server) handleAccessRequest(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "could not submit the request")
 		return
 	}
-	log.Printf("audit: access request received id=%d company=%q email=%q ip=%s",
-		saved.ID, saved.CompanyName, saved.Email, req.SourceIP)
+	s.recordAudit(r, audit.Event{
+		Action: audit.ActionRequestReceived, TargetType: "access_request",
+		TargetID: strconv.FormatInt(saved.ID, 10), TargetLabel: saved.CompanyName,
+		Details: map[string]any{"email": saved.Email},
+	})
 	writeJSON(w, http.StatusCreated, map[string]any{"status": "received"})
 }
 
@@ -515,8 +567,10 @@ func (s *server) handleApproveRequest(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "could not create the customer")
 		return
 	}
-	log.Printf("audit: access request approved id=%d customer=%q customerId=%d by=%q ip=%s",
-		id, u.Username, u.ID, admin, clientIP(r))
+	s.recordAudit(r, audit.Event{
+		Action: audit.ActionRequestApproved, TargetType: "access_request", TargetID: strconv.FormatInt(id, 10),
+		TargetLabel: u.Username, CustomerID: u.ID,
+	})
 	writeJSON(w, http.StatusCreated, publicUser(u))
 }
 
@@ -535,7 +589,9 @@ func (s *server) handleRejectRequest(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "could not update the request")
 		return
 	}
-	log.Printf("audit: access request rejected id=%d by=%q ip=%s", id, admin, clientIP(r))
+	s.recordAudit(r, audit.Event{
+		Action: audit.ActionRequestRejected, TargetType: "access_request", TargetID: strconv.FormatInt(id, 10),
+	})
 	writeJSON(w, http.StatusOK, map[string]any{"status": "ok"})
 }
 
@@ -554,12 +610,41 @@ func (s *server) handleMe(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// handleLogout ends the caller's own session: it denies this token's jti until
+// it would have expired anyway, so it stops working immediately rather than
+// only once the client discards it.
+func (s *server) handleLogout(w http.ResponseWriter, r *http.Request) {
+	c := claimsFrom(r)
+	if err := s.db.RevokeToken(r.Context(), c.JTI, c.UserID, time.Unix(c.Exp, 0)); err != nil {
+		writeError(w, http.StatusInternalServerError, "could not sign out")
+		return
+	}
+	s.recordAudit(r, audit.Event{
+		Action: audit.ActionLogout, ActorID: c.UserID, ActorUsername: c.Username, ActorRole: c.Role,
+	})
+	writeJSON(w, http.StatusOK, map[string]any{"status": "ok"})
+}
+
+// handleMyEvents returns the caller's own security activity — logins, password
+// and two-factor changes, and the like — cursor-paginated newest first.
+func (s *server) handleMyEvents(w http.ResponseWriter, r *http.Request) {
+	c := claimsFrom(r)
+	cursor, _ := strconv.ParseInt(r.URL.Query().Get("cursor"), 10, 64)
+	events, err := s.db.ListAuditEventsForActor(r.Context(), c.UserID, cursor, 50)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "could not load activity")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"events": events})
+}
+
 func (s *server) handleHosts(w http.ResponseWriter, r *http.Request) {
 	cid, err := s.targetCustomer(r)
 	if err != nil {
 		writeScopeError(w, err)
 		return
 	}
+	s.auditTenantView(r, cid)
 	hosts, err := s.db.ListHosts(r.Context(), cid)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "could not load hosts")
@@ -592,6 +677,7 @@ func (s *server) handleSearch(w http.ResponseWriter, r *http.Request) {
 		writeScopeError(w, err)
 		return
 	}
+	s.auditTenantView(r, cid)
 	hosts, err := s.db.ListHosts(r.Context(), cid)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "could not load hosts")
@@ -631,6 +717,38 @@ func (s *server) handleScans(w http.ResponseWriter, r *http.Request) {
 }
 
 // ── admin handlers ──────────────────────────────────────────────────────────
+
+// handleAdminEvents serves the security event log to the admin panel: every
+// login, logout, admin action, and tenant-data view, filtered and paginated.
+// Reading the log is itself audited, so "who looked at the audit log" is
+// answerable from the log.
+func (s *server) handleAdminEvents(w http.ResponseWriter, r *http.Request) {
+	q := r.URL.Query()
+	f := db.AuditFilter{
+		Action:    q.Get("action"),
+		Outcome:   q.Get("outcome"),
+		ActorLike: q.Get("actor"),
+	}
+	if v := q.Get("customerId"); v != "" {
+		f.CustomerID, _ = strconv.ParseInt(v, 10, 64)
+	}
+	if v := q.Get("cursor"); v != "" {
+		f.Cursor, _ = strconv.ParseInt(v, 10, 64)
+	}
+	if v := q.Get("since"); v != "" {
+		f.Since, _ = time.Parse(time.RFC3339, v)
+	}
+	if v := q.Get("until"); v != "" {
+		f.Until, _ = time.Parse(time.RFC3339, v)
+	}
+	events, err := s.db.ListAuditEvents(r.Context(), f)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "could not load events")
+		return
+	}
+	s.recordAudit(r, audit.Event{Action: audit.ActionAuditLogViewed})
+	writeJSON(w, http.StatusOK, map[string]any{"events": events})
+}
 
 func (s *server) handleListCustomers(w http.ResponseWriter, r *http.Request) {
 	customers, err := s.db.ListCustomers(r.Context())
@@ -674,8 +792,10 @@ func (s *server) handleCreateCustomer(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "could not create customer")
 		return
 	}
-	log.Printf("audit: customer created user=%q id=%d by=%q ip=%s",
-		u.Username, u.ID, claimsFrom(r).Username, clientIP(r))
+	s.recordAudit(r, audit.Event{
+		Action: audit.ActionCustomerCreated, TargetType: "user",
+		TargetID: strconv.FormatInt(u.ID, 10), TargetLabel: u.Username, CustomerID: u.ID,
+	})
 	writeJSON(w, http.StatusCreated, publicUser(u))
 }
 
@@ -714,12 +834,48 @@ func (s *server) handleUpload(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "could not save scan")
 		return
 	}
-	log.Printf("audit: scan uploaded file=%q hosts=%d customer=%d by=%q ip=%s",
-		header.Filename, len(hosts), customerID, claimsFrom(r).Username, clientIP(r))
+	s.recordAudit(r, audit.Event{
+		Action: audit.ActionScanUploaded, TargetType: "scan", TargetID: strconv.FormatInt(scan.ID, 10),
+		TargetLabel: header.Filename, CustomerID: customerID,
+		Details: map[string]any{"hosts": len(hosts)},
+	})
 	writeJSON(w, http.StatusOK, map[string]any{
 		"scan":        scan,
 		"hostsParsed": len(hosts),
 	})
+}
+
+// handleDeleteScan undoes an upload made to the wrong customer, or one whose
+// hosts should never have merged into the tenant's current view. Only the
+// hosts still pointing at this scan as their most recent upload are removed —
+// a host later touched by a different scan is left alone.
+func (s *server) handleDeleteScan(w http.ResponseWriter, r *http.Request) {
+	scanID, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid scan id")
+		return
+	}
+	var body struct {
+		CustomerID int64 `json:"customerId"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.CustomerID == 0 {
+		writeError(w, http.StatusBadRequest, "missing or invalid customerId")
+		return
+	}
+	removed, err := s.db.DeleteScan(r.Context(), body.CustomerID, scanID)
+	if errors.Is(err, db.ErrNotFound) {
+		writeError(w, http.StatusNotFound, "scan not found")
+		return
+	}
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "could not delete the scan")
+		return
+	}
+	s.recordAudit(r, audit.Event{
+		Action: audit.ActionScanDeleted, TargetType: "scan", TargetID: strconv.FormatInt(scanID, 10),
+		CustomerID: body.CustomerID, Details: map[string]any{"hostsRemoved": removed},
+	})
+	writeJSON(w, http.StatusOK, map[string]any{"status": "ok", "hostsRemoved": removed})
 }
 
 // ── account management ──────────────────────────────────────────────────────
@@ -749,7 +905,10 @@ func (s *server) handleChangePassword(w http.ResponseWriter, r *http.Request) {
 	c := claimsFrom(r)
 	u, err := s.db.GetUser(r.Context(), c.UserID)
 	if err != nil || !auth.CheckPassword(u.PasswordHash, body.CurrentPassword) {
-		log.Printf("audit: password change refused user=%q ip=%s", c.Username, clientIP(r))
+		s.recordAudit(r, audit.Event{
+			Action: audit.ActionPasswordChangeRefused, Outcome: audit.Failure,
+			ActorID: c.UserID, ActorUsername: c.Username, ActorRole: c.Role,
+		})
 		writeError(w, http.StatusUnauthorized, "current password is incorrect")
 		return
 	}
@@ -773,7 +932,9 @@ func (s *server) handleChangePassword(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "could not issue token")
 		return
 	}
-	log.Printf("audit: password changed user=%q id=%d ip=%s", u.Username, u.ID, clientIP(r))
+	s.recordAudit(r, audit.Event{
+		Action: audit.ActionPasswordChanged, ActorID: u.ID, ActorUsername: u.Username, ActorRole: u.Role,
+	})
 	writeJSON(w, http.StatusOK, map[string]any{"token": token})
 }
 
@@ -804,8 +965,10 @@ func (s *server) handleResetPassword(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "could not change the password")
 		return
 	}
-	log.Printf("audit: password reset user=%q id=%d by=%q ip=%s",
-		target.Username, target.ID, claimsFrom(r).Username, clientIP(r))
+	s.recordAudit(r, audit.Event{
+		Action: audit.ActionPasswordResetByAdmin, TargetType: "user",
+		TargetID: strconv.FormatInt(target.ID, 10), TargetLabel: target.Username, CustomerID: target.ID,
+	})
 	writeJSON(w, http.StatusOK, map[string]any{"status": "ok"})
 }
 
@@ -826,9 +989,14 @@ func (s *server) handleSetStatus(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "could not update the account")
 		return
 	}
-	log.Printf("audit: customer %s user=%q id=%d by=%q ip=%s",
-		map[bool]string{true: "suspended", false: "restored"}[body.Disabled],
-		target.Username, target.ID, claimsFrom(r).Username, clientIP(r))
+	action := audit.ActionCustomerRestored
+	if body.Disabled {
+		action = audit.ActionCustomerSuspended
+	}
+	s.recordAudit(r, audit.Event{
+		Action: action, TargetType: "user", TargetID: strconv.FormatInt(target.ID, 10),
+		TargetLabel: target.Username, CustomerID: target.ID,
+	})
 	writeJSON(w, http.StatusOK, map[string]any{"status": "ok"})
 }
 
@@ -844,8 +1012,10 @@ func (s *server) handleResetTOTP(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "could not turn two-factor off")
 		return
 	}
-	log.Printf("audit: two-factor reset user=%q id=%d by=%q ip=%s",
-		target.Username, target.ID, claimsFrom(r).Username, clientIP(r))
+	s.recordAudit(r, audit.Event{
+		Action: audit.ActionTwoFactorResetByAdmin, TargetType: "user",
+		TargetID: strconv.FormatInt(target.ID, 10), TargetLabel: target.Username, CustomerID: target.ID,
+	})
 	writeJSON(w, http.StatusOK, map[string]any{"status": "ok"})
 }
 
@@ -889,6 +1059,9 @@ func (s *server) handleTOTPSetup(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "could not start two-factor setup")
 		return
 	}
+	s.recordAudit(r, audit.Event{
+		Action: audit.ActionTwoFactorSetupStarted, ActorID: u.ID, ActorUsername: u.Username, ActorRole: u.Role,
+	})
 	writeJSON(w, http.StatusOK, map[string]any{
 		"secret": secret,
 		"uri":    auth.TOTPProvisioningURI(secret, u.Username, totpIssuer),
@@ -940,7 +1113,9 @@ func (s *server) handleTOTPEnable(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "could not issue token")
 		return
 	}
-	log.Printf("audit: two-factor enabled user=%q id=%d ip=%s", u.Username, u.ID, clientIP(r))
+	s.recordAudit(r, audit.Event{
+		Action: audit.ActionTwoFactorEnabled, ActorID: u.ID, ActorUsername: u.Username, ActorRole: u.Role,
+	})
 	writeJSON(w, http.StatusOK, map[string]any{
 		"token":         token,
 		"recoveryCodes": codes,
@@ -964,7 +1139,10 @@ func (s *server) handleTOTPDisable(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if !auth.CheckPassword(u.PasswordHash, body.Password) {
-		log.Printf("audit: two-factor disable refused user=%q id=%d ip=%s", u.Username, u.ID, clientIP(r))
+		s.recordAudit(r, audit.Event{
+			Action: audit.ActionTwoFactorDisableFail, Outcome: audit.Failure,
+			ActorID: u.ID, ActorUsername: u.Username, ActorRole: u.Role,
+		})
 		writeError(w, http.StatusUnauthorized, "current password is incorrect")
 		return
 	}
@@ -977,7 +1155,9 @@ func (s *server) handleTOTPDisable(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "could not issue token")
 		return
 	}
-	log.Printf("audit: two-factor disabled user=%q id=%d ip=%s", u.Username, u.ID, clientIP(r))
+	s.recordAudit(r, audit.Event{
+		Action: audit.ActionTwoFactorDisabled, ActorID: u.ID, ActorUsername: u.Username, ActorRole: u.Role,
+	})
 	writeJSON(w, http.StatusOK, map[string]any{"token": token})
 }
 
@@ -1088,12 +1268,79 @@ func (s *server) verify(r *http.Request) (auth.Claims, bool) {
 	if err != nil || u.Disabled || u.TokenVersion != c.Version || u.Role != c.Role {
 		return auth.Claims{}, false
 	}
+	// A token whose jti was revoked (logout) must never work again, even
+	// though its signature and token_version still check out.
+	if revoked, err := s.db.IsTokenRevoked(r.Context(), c.JTI); err != nil || revoked {
+		return auth.Claims{}, false
+	}
 	return c, true
 }
 
 func claimsFrom(r *http.Request) auth.Claims {
 	c, _ := r.Context().Value(claimsKey).(auth.Claims)
 	return c
+}
+
+// ── audit logging ────────────────────────────────────────────────────────────
+
+// recordAudit fills in what a handler already has for free — the caller's IP,
+// user agent, and (if the request passed through the auth middleware) actor
+// identity — then persists the event. It never fails the request: the log is
+// a record of what happened, not a gate on whether it is allowed to happen,
+// so a database hiccup here is only ever logged to stdout, not surfaced to
+// the caller. The stdout line is a fallback route to a log shipper if the
+// database write itself fails.
+func (s *server) recordAudit(r *http.Request, e audit.Event) {
+	if e.IP == "" {
+		e.IP = clientIP(r)
+	}
+	if e.UserAgent == "" {
+		e.UserAgent = r.UserAgent()
+	}
+	if e.ActorID == 0 {
+		if c := claimsFrom(r); c.UserID != 0 {
+			e.ActorID = c.UserID
+			if e.ActorUsername == "" {
+				e.ActorUsername = c.Username
+			}
+			if e.ActorRole == "" {
+				e.ActorRole = c.Role
+			}
+		}
+	}
+	s.persistAudit(r.Context(), e)
+}
+
+// recordAuditBackground is for events with no HTTP request behind them —
+// bootstrap actions run at process start.
+func (s *server) recordAuditBackground(ctx context.Context, e audit.Event) {
+	s.persistAudit(ctx, e)
+}
+
+func (s *server) persistAudit(ctx context.Context, e audit.Event) {
+	outcome := e.Outcome
+	if outcome == "" {
+		outcome = audit.Success
+	}
+	log.Printf("audit: action=%s outcome=%s actor=%q actorId=%d target=%s:%s customer=%d ip=%s",
+		e.Action, outcome, e.ActorUsername, e.ActorID, e.TargetType, e.TargetID, e.CustomerID, e.IP)
+	if err := s.db.RecordAuditEvent(ctx, e); err != nil {
+		log.Printf("audit: could not persist event action=%s: %v", e.Action, err)
+	}
+}
+
+// auditTenantView records an admin reading a specific customer's data. It is a
+// no-op for a customer viewing their own data — that is the expected path,
+// not a cross-tenant access worth flagging.
+func (s *server) auditTenantView(r *http.Request, customerID int64) {
+	c := claimsFrom(r)
+	if c.Role != db.RoleAdmin {
+		return
+	}
+	s.recordAudit(r, audit.Event{
+		Action: audit.ActionTenantViewed, CustomerID: customerID,
+		TargetType: "customer", TargetID: strconv.FormatInt(customerID, 10),
+	})
 }
 
 // ── helpers ─────────────────────────────────────────────────────────────────

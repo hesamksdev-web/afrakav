@@ -62,6 +62,31 @@ export interface Customer extends User {
   lastScan: string | null;
 }
 
+export interface Scan {
+  id: number;
+  customerId: number;
+  filename: string;
+  hostsCount: number;
+  uploadedAt: string;
+}
+
+export interface AuditEvent {
+  id: number;
+  occurredAt: string;
+  actorId: number | null;
+  actorUsername: string;
+  actorRole: string;
+  action: string;
+  outcome: "success" | "failure" | "denied";
+  targetType: string;
+  targetId: string;
+  targetLabel: string;
+  customerId: number | null;
+  ip: string;
+  userAgent: string;
+  details: Record<string, unknown>;
+}
+
 export interface Stats {
   hosts: number;
   openPorts: number;
@@ -140,6 +165,12 @@ const ERROR_FA: Record<string, string> = {
   "admin access required": "این بخش تنها برای مدیران در دسترس است",
   "access denied": "دسترسی به این داده مجاز نیست",
   "admin must specify customerId": "برای مشاهدهٔ داده‌ها ابتدا یک مشتری را انتخاب کنید",
+  "could not sign out": "خروج از حساب با خطا مواجه شد",
+  "could not load activity": "بارگیری فعالیت‌های حساب با خطا مواجه شد",
+  "could not load events": "بارگیری رویدادها با خطا مواجه شد",
+  "invalid scan id": "شناسهٔ اسکن نامعتبر است",
+  "scan not found": "اسکن مورد نظر یافت نشد",
+  "could not delete the scan": "حذف اسکن با خطا مواجه شد",
 };
 
 function translateError(msg: string): string {
@@ -305,8 +336,15 @@ export async function disableTwoFactor(password: string): Promise<void> {
   tokenStore.set(data.token);
 }
 
-export function logout() {
-  tokenStore.clear();
+// Ends the session server-side (the token is revoked immediately, not just
+// forgotten) and then clears it locally either way, so a network failure
+// never leaves the user stuck signed in on their own screen.
+export async function logout(): Promise<void> {
+  try {
+    await request("/api/logout", { method: "POST" });
+  } finally {
+    tokenStore.clear();
+  }
 }
 
 // Changing a password invalidates every token issued before it, including the
@@ -326,6 +364,10 @@ export function fetchHosts(customerId?: number): Promise<HostRecord[]> {
 
 export function fetchStats(customerId?: number): Promise<Stats> {
   return request<Stats>(`/api/stats${qs(customerId)}`);
+}
+
+export function fetchScans(customerId?: number): Promise<Scan[]> {
+  return request<Scan[]>(`/api/scans${qs(customerId)}`);
 }
 
 // ── admin ───────────────────────────────────────────────────────────────────
@@ -377,3 +419,87 @@ export function adminUpload(file: File, customerId: number): Promise<UploadResul
 function qs(customerId?: number): string {
   return customerId != null ? `?customerId=${customerId}` : "";
 }
+
+// Undoes an upload — a file assigned to the wrong customer, or hosts that
+// should never have merged in. Only hosts still pointing at this scan as their
+// most recent upload are removed.
+export function deleteScan(scanId: number, customerId: number): Promise<{ status: string; hostsRemoved: number }> {
+  return request(`/api/admin/scans/${scanId}/delete`, {
+    method: "POST",
+    body: JSON.stringify({ customerId }),
+  });
+}
+
+// ── security events ──────────────────────────────────────────────────────────
+
+export interface EventFilter {
+  action?: string;
+  outcome?: string;
+  actor?: string;
+  customerId?: number;
+  cursor?: number;
+}
+
+function eventQuery(f: EventFilter): string {
+  const params = new URLSearchParams();
+  if (f.action) params.set("action", f.action);
+  if (f.outcome) params.set("outcome", f.outcome);
+  if (f.actor) params.set("actor", f.actor);
+  if (f.customerId != null) params.set("customerId", String(f.customerId));
+  if (f.cursor != null) params.set("cursor", String(f.cursor));
+  const s = params.toString();
+  return s ? `?${s}` : "";
+}
+
+// Admin: the full security log — logins, admin actions, and tenant-data views
+// across every account.
+export function listAuditEvents(filter: EventFilter = {}): Promise<{ events: AuditEvent[] }> {
+  return request(`/api/admin/events${eventQuery(filter)}`);
+}
+
+// The signed-in account's own activity: logins, password and two-factor
+// changes. Available to admins and customers alike.
+export function listMyEvents(cursor?: number): Promise<{ events: AuditEvent[] }> {
+  return request(`/api/events${cursor != null ? `?cursor=${cursor}` : ""}`);
+}
+
+// Action labels shown in the events table. Unknown actions (a future release
+// added one this build does not know) fall back to the raw string.
+export const EVENT_ACTION_FA: Record<string, string> = {
+  "login.success": "ورود موفق",
+  "login.failed": "ورود ناموفق",
+  "login.refused_disabled": "ورود رد شد (حساب غیرفعال)",
+  "login.mfa_challenge": "رمز عبور درست — در انتظار کد دوعاملی",
+  "login.mfa_failed": "کد دوعاملی نادرست",
+  "login.mfa_replay": "تلاش برای استفادهٔ دوبارهٔ کد دوعاملی",
+  "login.recovery_code_used": "استفاده از کد بازیابی",
+  "logout": "خروج",
+  "password.changed": "تغییر رمز عبور",
+  "password.change_refused": "تغییر رمز عبور رد شد",
+  "password.reset_by_admin": "بازنشانی رمز عبور توسط مدیر",
+  "2fa.setup_started": "شروع فعال‌سازی ورود دو عاملی",
+  "2fa.enabled": "فعال‌سازی ورود دو عاملی",
+  "2fa.disabled": "غیرفعال‌سازی ورود دو عاملی",
+  "2fa.disable_refused": "غیرفعال‌سازی ورود دو عاملی رد شد",
+  "2fa.reset_by_admin": "بازنشانی ورود دو عاملی توسط مدیر",
+  "customer.created": "ایجاد مشتری",
+  "customer.suspended": "غیرفعال‌سازی مشتری",
+  "customer.restored": "فعال‌سازی مشتری",
+  "request.received": "درخواست دسترسی جدید",
+  "request.throttled": "درخواست دسترسی مسدود شد (محدودیت نرخ)",
+  "request.approved": "تأیید درخواست دسترسی",
+  "request.rejected": "رد درخواست دسترسی",
+  "scan.uploaded": "بارگذاری اسکن",
+  "scan.deleted": "حذف اسکن",
+  "admin.tenant_viewed": "مشاهدهٔ داده‌های مشتری توسط مدیر",
+  "system.started": "راه‌اندازی سامانه",
+  "system.bootstrap_admin_created": "ایجاد حساب مدیر اولیه",
+  "system.bootstrap_demo_seeded": "بارگذاری اسکن نمونه",
+  "audit.viewed": "مشاهدهٔ رویدادها",
+};
+
+export const EVENT_OUTCOME_FA: Record<string, string> = {
+  success: "موفق",
+  failure: "ناموفق",
+  denied: "رد شد",
+};
