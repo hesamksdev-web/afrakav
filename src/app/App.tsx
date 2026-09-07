@@ -175,7 +175,7 @@ function SearchResults({
       <header className="sticky top-0 z-40 border-b border-border bg-card">
         <div className="max-w-6xl mx-auto px-4 py-2.5 flex items-center gap-3">
           <button onClick={onHome} title="بازگشت به داشبورد" className="flex items-center gap-1.5 flex-shrink-0">
-            <Brand className="h-6" />
+            <Brand className="h-7" />
           </button>
           <button onClick={onHome}
             className="flex items-center gap-1.5 flex-shrink-0 text-xs text-muted-foreground hover:text-primary border border-border hover:border-primary/30 rounded px-2 py-1.5 transition-colors">
@@ -328,7 +328,7 @@ function HostPage({ host, onBack, backLabel, onHome, onSearch }: {
       <header className="sticky top-0 z-40 border-b border-border bg-card">
         <div className="max-w-6xl mx-auto px-4 py-2.5 flex items-center gap-3">
           <button onClick={onHome} title="بازگشت به داشبورد" className="flex items-center gap-1.5 flex-shrink-0">
-            <Brand className="h-6" />
+            <Brand className="h-7" />
           </button>
           <button onClick={onBack}
             className="flex items-center gap-1.5 flex-shrink-0 text-xs text-muted-foreground hover:text-primary border border-border hover:border-primary/30 rounded px-2 py-1.5 transition-colors">

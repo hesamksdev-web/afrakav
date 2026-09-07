@@ -1,20 +1,22 @@
-import logo from "../../assets/afranet-logo.webp";
+import logoLight from "../../assets/afranet-logo.webp";
+import logoDark from "../../assets/afranet-logo-dark.webp";
 
 /**
- * The Afranet mark. The artwork is navy (#164194) on transparency, which scores
- * about 1.8:1 against the dark theme's surface — far below the 3:1 a graphic
- * needs to stay legible — so in dark mode it sits on a white plate rather than
- * being recoloured, which would misrepresent the brand. The padding is present
- * in both themes so the geometry does not shift between them.
+ * The Afranet mark.
+ *
+ * The delivered artwork is navy on transparency, which measures about 1.8:1
+ * against the dark theme's surface — well under the 3:1 a graphic needs to stay
+ * legible. Rather than sitting it on a white plate, which reads as a sticker on
+ * a dark interface, the wordmark is redrawn in white for dark backgrounds with
+ * the brand red kept (see scripts/make-dark-logo.py). Both files ship and CSS
+ * picks one, so there is no flash of the wrong mark on load.
  */
-export default function Brand({ className = "h-6" }: { className?: string }) {
+export default function Brand({ className = "h-7" }: { className?: string }) {
+  const shared = `${className} w-auto select-none`;
   return (
-    <img
-      src={logo}
-      alt="افرانت"
-      width={198}
-      height={51}
-      className={`${className} w-auto p-1 rounded-sm dark:bg-white`}
-    />
+    <span className="inline-flex flex-shrink-0" aria-label="افرانت" role="img">
+      <img src={logoLight} alt="" width={198} height={51} className={`${shared} dark:hidden`} />
+      <img src={logoDark} alt="" width={198} height={51} className={`${shared} hidden dark:block`} />
+    </span>
   );
 }

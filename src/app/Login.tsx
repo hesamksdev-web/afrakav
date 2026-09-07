@@ -55,13 +55,15 @@ export default function Login() {
       <div className="fixed top-4 end-4"><ThemeToggle /></div>
       <div className="w-full max-w-sm">
         {/* Brand */}
-        <div className="flex items-center justify-center gap-2 mb-1">
-          <Brand className="h-10" />
-          <span className="text-[12px] text-muted-foreground border-s border-border ps-2 ms-1">افراکاو</span>
+        {/* The mark carries the brand on its own here; stacking the product
+            name under it reads better than crowding both onto one line. */}
+        <div className="flex flex-col items-center gap-3 mb-8">
+          <Brand className="h-9" />
+          <div className="flex flex-col items-center gap-1">
+            <h1 className="text-base font-bold text-foreground tracking-tight">افراکاو</h1>
+            <p className="text-[12px] text-muted-foreground">سامانهٔ مدیریت آسیب‌پذیری</p>
+          </div>
         </div>
-        <p className="text-center text-xs text-muted-foreground mb-8">
-          سامانهٔ مدیریت آسیب‌پذیری — ورود مشتریان و مدیران
-        </p>
 
         {requesting ? (
           <AccessRequest onBack={() => setRequesting(false)} />
