@@ -1,10 +1,12 @@
-// Command afrashodan is the Go backend for the Afranet exposure-intelligence
+// Command afrakav is the Go backend for the Afranet exposure-intelligence
 // platform. It is multi-tenant: an admin uploads Nessus (.nessus) scans and
 // assigns each to a customer; customers log in and see ONLY their own hosts.
 //
 // Public:
 //
 //	POST /api/login                 {username,password} -> {token,user}
+//	                                or, with 2FA on, {mfaRequired,challenge}
+//	POST /api/login/mfa             {challenge,code} -> {token,user}
 //	GET  /api/health                liveness
 //
 // Authenticated (Bearer token):
@@ -15,12 +17,19 @@
 //	GET  /api/search?q=             Shodan-style query, scoped
 //	GET  /api/stats                 dashboard aggregates, scoped
 //	GET  /api/scans                 upload history, scoped
+//	POST /api/password              change your own password
+//	POST /api/2fa/setup             begin enrolment -> {secret,uri}
+//	POST /api/2fa/enable            {code} -> {token,recoveryCodes}
+//	POST /api/2fa/disable           {password}
 //
 // Admin only:
 //
 //	GET  /api/admin/customers       list customers with counts
 //	POST /api/admin/customers       {username,password,displayName}
 //	POST /api/admin/upload          multipart: file=.nessus, customerId=<id>
+//	POST /api/admin/customers/{id}/password   reset a customer's password
+//	POST /api/admin/customers/{id}/status     suspend or restore an account
+//	POST /api/admin/customers/{id}/2fa/reset  clear a locked-out second factor
 package main
 
 import (
@@ -46,6 +55,12 @@ const (
 	minSecretLen   = 32       // shortest JWT_SECRET we will start with
 	minUsernameLen = 3
 	minPasswordLen = 12
+
+	// How long the half-authenticated login has to produce a second factor.
+	mfaChallengeTTL = 5 * time.Minute
+
+	// The name an authenticator app shows beside the account.
+	totpIssuer = "Afrakav"
 )
 
 // dummyHash is compared against when a login names an account that does not
@@ -94,6 +109,7 @@ func main() {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /api/health", srv.handleHealth)
 	mux.HandleFunc("POST /api/login", srv.handleLogin)
+	mux.HandleFunc("POST /api/login/mfa", srv.handleLoginMFA)
 
 	mux.Handle("GET /api/me", srv.authed(srv.handleMe))
 	mux.Handle("GET /api/hosts", srv.authed(srv.handleHosts))
@@ -102,12 +118,16 @@ func main() {
 	mux.Handle("GET /api/stats", srv.authed(srv.handleStats))
 	mux.Handle("GET /api/scans", srv.authed(srv.handleScans))
 	mux.Handle("POST /api/password", srv.authed(srv.handleChangePassword))
+	mux.Handle("POST /api/2fa/setup", srv.authed(srv.handleTOTPSetup))
+	mux.Handle("POST /api/2fa/enable", srv.authed(srv.handleTOTPEnable))
+	mux.Handle("POST /api/2fa/disable", srv.authed(srv.handleTOTPDisable))
 
 	mux.Handle("GET /api/admin/customers", srv.adminOnly(srv.handleListCustomers))
 	mux.Handle("POST /api/admin/customers", srv.adminOnly(srv.handleCreateCustomer))
 	mux.Handle("POST /api/admin/upload", srv.adminOnly(srv.handleUpload))
 	mux.Handle("POST /api/admin/customers/{id}/password", srv.adminOnly(srv.handleResetPassword))
 	mux.Handle("POST /api/admin/customers/{id}/status", srv.adminOnly(srv.handleSetStatus))
+	mux.Handle("POST /api/admin/customers/{id}/2fa/reset", srv.adminOnly(srv.handleResetTOTP))
 
 	log.Printf("Afrashodan backend listening on %s", addr)
 	httpSrv := &http.Server{
@@ -198,6 +218,23 @@ func (s *server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusForbidden, "this account is suspended")
 		return
 	}
+	// With two-factor on, the password buys only a short-lived challenge that
+	// authenticates nothing by itself.
+	if u.TOTPEnabled {
+		challenge, err := s.issuer.IssueChallenge(u.ID, u.Username, u.Role, u.TokenVersion, mfaChallengeTTL, time.Now())
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "could not issue token")
+			return
+		}
+		log.Printf("audit: login password ok, awaiting second factor user=%q id=%d ip=%s",
+			u.Username, u.ID, clientIP(r))
+		writeJSON(w, http.StatusOK, map[string]any{
+			"mfaRequired": true,
+			"challenge":   challenge,
+		})
+		return
+	}
+
 	token, err := s.issuer.Issue(u.ID, u.Username, u.Role, u.TokenVersion, time.Now())
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "could not issue token")
@@ -210,6 +247,90 @@ func (s *server) handleLogin(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// handleLoginMFA completes a login that stopped at the second factor. It accepts
+// either a current authenticator code or one of the account's recovery codes.
+func (s *server) handleLoginMFA(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		Challenge string `json:"challenge"`
+		Code      string `json:"code"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+
+	c, err := s.issuer.Parse(strings.TrimSpace(body.Challenge), time.Now())
+	if err != nil || c.Purpose != auth.PurposeMFA {
+		writeError(w, http.StatusUnauthorized, "this sign-in has expired; start again")
+		return
+	}
+	u, err := s.db.GetUser(r.Context(), c.UserID)
+	if err != nil || u.Disabled || !u.TOTPEnabled || u.TokenVersion != c.Version {
+		writeError(w, http.StatusUnauthorized, "this sign-in has expired; start again")
+		return
+	}
+
+	if !s.checkSecondFactor(r, u, body.Code) {
+		log.Printf("audit: second factor failed user=%q id=%d ip=%s", u.Username, u.ID, clientIP(r))
+		writeError(w, http.StatusUnauthorized, "the verification code is not correct")
+		return
+	}
+
+	// Re-read: consuming a recovery code may have changed nothing, but enabling
+	// or disabling elsewhere would have, and the token must carry the current
+	// version.
+	fresh, err := s.db.GetUser(r.Context(), u.ID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "could not issue token")
+		return
+	}
+	token, err := s.issuer.Issue(fresh.ID, fresh.Username, fresh.Role, fresh.TokenVersion, time.Now())
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "could not issue token")
+		return
+	}
+	log.Printf("audit: login ok (second factor) user=%q id=%d role=%s ip=%s",
+		fresh.Username, fresh.ID, fresh.Role, clientIP(r))
+	writeJSON(w, http.StatusOK, map[string]any{
+		"token": token,
+		"user":  publicUser(fresh),
+	})
+}
+
+// checkSecondFactor accepts a live authenticator code or burns a recovery code.
+// A TOTP code is refused if it has already been used inside its own window.
+func (s *server) checkSecondFactor(r *http.Request, u db.User, code string) bool {
+	code = strings.TrimSpace(code)
+	if code == "" {
+		return false
+	}
+
+	if step, ok := auth.VerifyTOTP(u.TOTPSecret, code, time.Now()); ok {
+		fresh, err := s.db.MarkTOTPStep(r.Context(), u.ID, step)
+		if err != nil {
+			log.Printf("second factor: recording step: %v", err)
+			return false
+		}
+		if !fresh {
+			log.Printf("audit: replayed second-factor code user=%q id=%d ip=%s",
+				u.Username, u.ID, clientIP(r))
+		}
+		return fresh
+	}
+
+	used, err := s.db.ConsumeRecoveryCode(r.Context(), u.ID, auth.HashRecoveryCode(code))
+	if err != nil {
+		log.Printf("second factor: consuming recovery code: %v", err)
+		return false
+	}
+	if used {
+		left, _ := s.db.CountRecoveryCodes(r.Context(), u.ID)
+		log.Printf("audit: recovery code used user=%q id=%d remaining=%d ip=%s",
+			u.Username, u.ID, left, clientIP(r))
+	}
+	return used
+}
+
 // ── authenticated handlers ──────────────────────────────────────────────────
 
 func (s *server) handleMe(w http.ResponseWriter, r *http.Request) {
@@ -218,7 +339,11 @@ func (s *server) handleMe(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusUnauthorized, "authentication required")
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"user": publicUser(u)})
+	left, _ := s.db.CountRecoveryCodes(r.Context(), u.ID)
+	writeJSON(w, http.StatusOK, map[string]any{
+		"user":                   publicUser(u),
+		"recoveryCodesRemaining": left,
+	})
 }
 
 func (s *server) handleHosts(w http.ResponseWriter, r *http.Request) {
@@ -435,12 +560,7 @@ func (s *server) handleChangePassword(w http.ResponseWriter, r *http.Request) {
 	}
 	// The change voided every token issued before it, this request's included,
 	// so hand back a fresh one and keep the caller signed in.
-	fresh, err := s.db.GetUser(r.Context(), u.ID)
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, "could not change the password")
-		return
-	}
-	token, err := s.issuer.Issue(fresh.ID, fresh.Username, fresh.Role, fresh.TokenVersion, time.Now())
+	token, err := s.reissue(r, u.ID)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "could not issue token")
 		return
@@ -504,6 +624,23 @@ func (s *server) handleSetStatus(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"status": "ok"})
 }
 
+// handleResetTOTP switches a customer's second factor off. Without it, a
+// customer who loses both their phone and their recovery codes has no way back
+// in — nobody else can read the secret, by design.
+func (s *server) handleResetTOTP(w http.ResponseWriter, r *http.Request) {
+	target, ok := s.customerFromPath(w, r)
+	if !ok {
+		return
+	}
+	if err := s.db.DisableTOTP(r.Context(), target.ID); err != nil {
+		writeError(w, http.StatusInternalServerError, "could not turn two-factor off")
+		return
+	}
+	log.Printf("audit: two-factor reset user=%q id=%d by=%q ip=%s",
+		target.Username, target.ID, claimsFrom(r).Username, clientIP(r))
+	writeJSON(w, http.StatusOK, map[string]any{"status": "ok"})
+}
+
 // customerFromPath resolves the {id} path segment to an existing customer.
 // Admin accounts are deliberately not reachable this way.
 func (s *server) customerFromPath(w http.ResponseWriter, r *http.Request) (db.User, bool) {
@@ -518,6 +655,132 @@ func (s *server) customerFromPath(w http.ResponseWriter, r *http.Request) (db.Us
 		return db.User{}, false
 	}
 	return u, true
+}
+
+// ── two-factor enrolment ────────────────────────────────────────────────────
+
+// handleTOTPSetup begins enrolment: it mints a secret and hands back the
+// otpauth URI for the QR code. Two-factor is not on until handleTOTPEnable
+// confirms the account can produce a code from it.
+func (s *server) handleTOTPSetup(w http.ResponseWriter, r *http.Request) {
+	u, err := s.db.GetUser(r.Context(), claimsFrom(r).UserID)
+	if err != nil {
+		writeError(w, http.StatusUnauthorized, "authentication required")
+		return
+	}
+	if u.TOTPEnabled {
+		writeError(w, http.StatusConflict, "two-factor authentication is already on")
+		return
+	}
+	secret, err := auth.NewTOTPSecret()
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "could not start two-factor setup")
+		return
+	}
+	if err := s.db.StartTOTPEnrolment(r.Context(), u.ID, secret); err != nil {
+		writeError(w, http.StatusInternalServerError, "could not start two-factor setup")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"secret": secret,
+		"uri":    auth.TOTPProvisioningURI(secret, u.Username, totpIssuer),
+	})
+}
+
+// handleTOTPEnable turns two-factor on once the account proves it holds the
+// secret, and returns the recovery codes — the only time they are ever shown.
+func (s *server) handleTOTPEnable(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		Code string `json:"code"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	u, err := s.db.GetUser(r.Context(), claimsFrom(r).UserID)
+	if err != nil {
+		writeError(w, http.StatusUnauthorized, "authentication required")
+		return
+	}
+	if u.TOTPEnabled {
+		writeError(w, http.StatusConflict, "two-factor authentication is already on")
+		return
+	}
+	if u.TOTPSecret == "" {
+		writeError(w, http.StatusConflict, "start the two-factor setup first")
+		return
+	}
+	step, ok := auth.VerifyTOTP(u.TOTPSecret, body.Code, time.Now())
+	if !ok {
+		writeError(w, http.StatusUnauthorized, "the verification code is not correct")
+		return
+	}
+
+	codes, hashes, err := auth.NewRecoveryCodes()
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "could not finish two-factor setup")
+		return
+	}
+	if err := s.db.EnableTOTP(r.Context(), u.ID, step, hashes); err != nil {
+		writeError(w, http.StatusInternalServerError, "could not finish two-factor setup")
+		return
+	}
+
+	// Enabling bumped token_version, so this session's token is now stale.
+	token, err := s.reissue(r, u.ID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "could not issue token")
+		return
+	}
+	log.Printf("audit: two-factor enabled user=%q id=%d ip=%s", u.Username, u.ID, clientIP(r))
+	writeJSON(w, http.StatusOK, map[string]any{
+		"token":         token,
+		"recoveryCodes": codes,
+	})
+}
+
+// handleTOTPDisable turns two-factor off. It asks for the password again rather
+// than trusting the open session, because switching a second factor off is
+// exactly what someone on a borrowed screen would try.
+func (s *server) handleTOTPDisable(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		Password string `json:"password"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	u, err := s.db.GetUser(r.Context(), claimsFrom(r).UserID)
+	if err != nil {
+		writeError(w, http.StatusUnauthorized, "authentication required")
+		return
+	}
+	if !auth.CheckPassword(u.PasswordHash, body.Password) {
+		log.Printf("audit: two-factor disable refused user=%q id=%d ip=%s", u.Username, u.ID, clientIP(r))
+		writeError(w, http.StatusUnauthorized, "current password is incorrect")
+		return
+	}
+	if err := s.db.DisableTOTP(r.Context(), u.ID); err != nil {
+		writeError(w, http.StatusInternalServerError, "could not turn two-factor off")
+		return
+	}
+	token, err := s.reissue(r, u.ID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "could not issue token")
+		return
+	}
+	log.Printf("audit: two-factor disabled user=%q id=%d ip=%s", u.Username, u.ID, clientIP(r))
+	writeJSON(w, http.StatusOK, map[string]any{"token": token})
+}
+
+// reissue mints a fresh session token after an operation that bumped the
+// account's token_version, so the caller's own session survives it.
+func (s *server) reissue(r *http.Request, userID int64) (string, error) {
+	u, err := s.db.GetUser(r.Context(), userID)
+	if err != nil {
+		return "", err
+	}
+	return s.issuer.Issue(u.ID, u.Username, u.Role, u.TokenVersion, time.Now())
 }
 
 // ── scoping / middleware ────────────────────────────────────────────────────
@@ -609,6 +872,10 @@ func (s *server) verify(r *http.Request) (auth.Claims, bool) {
 	if err != nil {
 		return auth.Claims{}, false
 	}
+	// A challenge token from a half-finished login must never pass for a session.
+	if c.Purpose != auth.PurposeSession {
+		return auth.Claims{}, false
+	}
 	u, err := s.db.GetUser(r.Context(), c.UserID)
 	if err != nil || u.Disabled || u.TokenVersion != c.Version || u.Role != c.Role {
 		return auth.Claims{}, false
@@ -630,6 +897,7 @@ func publicUser(u db.User) map[string]any {
 		"role":        u.Role,
 		"displayName": u.DisplayName,
 		"disabled":    u.Disabled,
+		"totpEnabled": u.TOTPEnabled,
 	}
 }
 

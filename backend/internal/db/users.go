@@ -27,6 +27,9 @@ type User struct {
 	CreatedAt    time.Time `json:"createdAt"`
 	TokenVersion int       `json:"-"`
 	Disabled     bool      `json:"disabled"`
+	TOTPSecret   string    `json:"-"`
+	TOTPEnabled  bool      `json:"totpEnabled"`
+	TOTPLastStep int64     `json:"-"`
 }
 
 // CreateUser inserts a user. The caller supplies an already-hashed password.
@@ -35,9 +38,9 @@ func (d *DB) CreateUser(ctx context.Context, username, passwordHash, role, displ
 	err := d.pool.QueryRow(ctx,
 		`INSERT INTO users (username, password_hash, role, display_name)
 		 VALUES ($1, $2, $3, $4)
-		 RETURNING id, username, password_hash, role, display_name, created_at, token_version, disabled`,
+		 RETURNING id, username, password_hash, role, display_name, created_at, token_version, disabled, totp_secret, totp_enabled, totp_last_step`,
 		username, passwordHash, role, displayName,
-	).Scan(&u.ID, &u.Username, &u.PasswordHash, &u.Role, &u.DisplayName, &u.CreatedAt, &u.TokenVersion, &u.Disabled)
+	).Scan(&u.ID, &u.Username, &u.PasswordHash, &u.Role, &u.DisplayName, &u.CreatedAt, &u.TokenVersion, &u.Disabled, &u.TOTPSecret, &u.TOTPEnabled, &u.TOTPLastStep)
 	return u, err
 }
 
@@ -45,9 +48,9 @@ func (d *DB) CreateUser(ctx context.Context, username, passwordHash, role, displ
 func (d *DB) GetUserByUsername(ctx context.Context, username string) (User, error) {
 	var u User
 	err := d.pool.QueryRow(ctx,
-		`SELECT id, username, password_hash, role, display_name, created_at, token_version, disabled
+		`SELECT id, username, password_hash, role, display_name, created_at, token_version, disabled, totp_secret, totp_enabled, totp_last_step
 		 FROM users WHERE username = $1`, username,
-	).Scan(&u.ID, &u.Username, &u.PasswordHash, &u.Role, &u.DisplayName, &u.CreatedAt, &u.TokenVersion, &u.Disabled)
+	).Scan(&u.ID, &u.Username, &u.PasswordHash, &u.Role, &u.DisplayName, &u.CreatedAt, &u.TokenVersion, &u.Disabled, &u.TOTPSecret, &u.TOTPEnabled, &u.TOTPLastStep)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return User{}, ErrNotFound
 	}
@@ -58,9 +61,9 @@ func (d *DB) GetUserByUsername(ctx context.Context, username string) (User, erro
 func (d *DB) GetUser(ctx context.Context, id int64) (User, error) {
 	var u User
 	err := d.pool.QueryRow(ctx,
-		`SELECT id, username, password_hash, role, display_name, created_at, token_version, disabled
+		`SELECT id, username, password_hash, role, display_name, created_at, token_version, disabled, totp_secret, totp_enabled, totp_last_step
 		 FROM users WHERE id = $1`, id,
-	).Scan(&u.ID, &u.Username, &u.PasswordHash, &u.Role, &u.DisplayName, &u.CreatedAt, &u.TokenVersion, &u.Disabled)
+	).Scan(&u.ID, &u.Username, &u.PasswordHash, &u.Role, &u.DisplayName, &u.CreatedAt, &u.TokenVersion, &u.Disabled, &u.TOTPSecret, &u.TOTPEnabled, &u.TOTPLastStep)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return User{}, ErrNotFound
 	}
@@ -79,7 +82,7 @@ type CustomerSummary struct {
 // ListCustomers returns all customer accounts with aggregate counts.
 func (d *DB) ListCustomers(ctx context.Context) ([]CustomerSummary, error) {
 	rows, err := d.pool.Query(ctx, `
-		SELECT u.id, u.username, u.role, u.display_name, u.created_at, u.disabled,
+		SELECT u.id, u.username, u.role, u.display_name, u.created_at, u.disabled, u.totp_enabled,
 		       COALESCE(h.cnt, 0)  AS host_count,
 		       COALESCE(s.cnt, 0)  AS scan_count,
 		       s.last_scan
@@ -99,7 +102,7 @@ func (d *DB) ListCustomers(ctx context.Context) ([]CustomerSummary, error) {
 	out := []CustomerSummary{}
 	for rows.Next() {
 		var c CustomerSummary
-		if err := rows.Scan(&c.ID, &c.Username, &c.Role, &c.DisplayName, &c.CreatedAt, &c.Disabled,
+		if err := rows.Scan(&c.ID, &c.Username, &c.Role, &c.DisplayName, &c.CreatedAt, &c.Disabled, &c.TOTPEnabled,
 			&c.HostCount, &c.ScanCount, &c.LastScan); err != nil {
 			return nil, err
 		}
@@ -142,5 +145,110 @@ func (d *DB) SetDisabled(ctx context.Context, id int64, disabled bool) error {
 func (d *DB) CountUsers(ctx context.Context) (int, error) {
 	var n int
 	err := d.pool.QueryRow(ctx, `SELECT COUNT(*) FROM users`).Scan(&n)
+	return n, err
+}
+
+// ── two-factor authentication ───────────────────────────────────────────────
+
+// StartTOTPEnrolment stores a pending secret. Two-factor stays off until the
+// account proves it can produce a code, so a half-finished enrolment can never
+// lock anyone out.
+func (d *DB) StartTOTPEnrolment(ctx context.Context, id int64, secret string) error {
+	tag, err := d.pool.Exec(ctx,
+		`UPDATE users SET totp_secret = $2, totp_enabled = false, totp_last_step = 0
+		 WHERE id = $1`, id, secret)
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
+// EnableTOTP switches two-factor on and replaces the recovery codes, in one
+// transaction so an account never ends up enabled with nobody's codes.
+func (d *DB) EnableTOTP(ctx context.Context, id int64, step int64, codeHashes []string) error {
+	tx, err := d.pool.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx)
+
+	tag, err := tx.Exec(ctx,
+		`UPDATE users SET totp_enabled = true, totp_last_step = $2, token_version = token_version + 1
+		 WHERE id = $1 AND totp_secret <> ''`, id, step)
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrNotFound
+	}
+
+	if _, err := tx.Exec(ctx, `DELETE FROM recovery_codes WHERE user_id = $1`, id); err != nil {
+		return err
+	}
+	for _, h := range codeHashes {
+		if _, err := tx.Exec(ctx,
+			`INSERT INTO recovery_codes (user_id, code_hash) VALUES ($1, $2)`, id, h); err != nil {
+			return err
+		}
+	}
+	return tx.Commit(ctx)
+}
+
+// DisableTOTP clears the secret and every recovery code, and invalidates the
+// account's tokens so the change cannot be outrun by an open session.
+func (d *DB) DisableTOTP(ctx context.Context, id int64) error {
+	tx, err := d.pool.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx)
+
+	tag, err := tx.Exec(ctx,
+		`UPDATE users SET totp_secret = '', totp_enabled = false, totp_last_step = 0,
+		                  token_version = token_version + 1
+		 WHERE id = $1`, id)
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrNotFound
+	}
+	if _, err := tx.Exec(ctx, `DELETE FROM recovery_codes WHERE user_id = $1`, id); err != nil {
+		return err
+	}
+	return tx.Commit(ctx)
+}
+
+// MarkTOTPStep records the counter step a code was accepted for. The update is
+// conditional, so a replay of the same code inside its window affects no rows
+// and the caller can reject it.
+func (d *DB) MarkTOTPStep(ctx context.Context, id int64, step int64) (accepted bool, err error) {
+	tag, err := d.pool.Exec(ctx,
+		`UPDATE users SET totp_last_step = $2 WHERE id = $1 AND totp_last_step < $2`, id, step)
+	if err != nil {
+		return false, err
+	}
+	return tag.RowsAffected() == 1, nil
+}
+
+// ConsumeRecoveryCode deletes a matching code and reports whether it existed.
+// Deleting is the check: a code is good exactly once.
+func (d *DB) ConsumeRecoveryCode(ctx context.Context, id int64, codeHash string) (bool, error) {
+	tag, err := d.pool.Exec(ctx,
+		`DELETE FROM recovery_codes WHERE user_id = $1 AND code_hash = $2`, id, codeHash)
+	if err != nil {
+		return false, err
+	}
+	return tag.RowsAffected() == 1, nil
+}
+
+// CountRecoveryCodes reports how many unused codes an account has left.
+func (d *DB) CountRecoveryCodes(ctx context.Context, id int64) (int, error) {
+	var n int
+	err := d.pool.QueryRow(ctx,
+		`SELECT COUNT(*) FROM recovery_codes WHERE user_id = $1`, id).Scan(&n)
 	return n, err
 }

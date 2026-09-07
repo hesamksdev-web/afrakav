@@ -3,7 +3,7 @@ import {
   Search, Shield, AlertTriangle, X,
   ChevronDown, ChevronUp, CheckCircle,
   Cpu, Wifi, ExternalLink, Tag, Activity,
-  Building, LogOut, Loader2, Zap, ArrowRight, LayoutDashboard,
+  Building, LogOut, Loader2, Zap, ArrowRight, LayoutDashboard, SlidersHorizontal,
 } from "lucide-react";
 import { fetchHosts, safeHref, HostRecord, Severity } from "./api";
 import { AuthProvider, useAuth } from "./auth";
@@ -11,7 +11,7 @@ import Login from "./Login";
 import Admin from "./Admin";
 import Dashboard, { ExploitBadges } from "./components/Dashboard";
 import ThemeToggle from "./components/ThemeToggle";
-import ChangePassword from "./components/ChangePassword";
+import Settings from "./Settings";
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 const faNum = (n: number) => n.toLocaleString("fa-IR");
@@ -66,7 +66,9 @@ function subnetLabel(ip: string) {
   return parts.length === 4 ? `${parts.slice(0, 3).join(".")}.0/24` : ip;
 }
 
-function BrandNav({ username, onLogout, maxW = "max-w-5xl" }: { username?: string; onLogout: () => void; maxW?: string }) {
+function BrandNav({ username, onLogout, onSettings, maxW = "max-w-5xl" }: {
+  username?: string; onLogout: () => void; onSettings: () => void; maxW?: string;
+}) {
   return (
     <nav className="border-b border-border bg-card">
       <div className={`${maxW} mx-auto px-4 py-3 flex items-center gap-6`}>
@@ -77,7 +79,10 @@ function BrandNav({ username, onLogout, maxW = "max-w-5xl" }: { username?: strin
         </div>
         <div className="ms-auto flex items-center gap-4">
           {username && <span className="text-xs font-mono text-muted-foreground hidden sm:block" dir="ltr">{username}</span>}
-          <ChangePassword />
+          <button onClick={onSettings} title="تنظیمات حساب"
+            className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-primary transition-colors">
+            <SlidersHorizontal size={13} /> <span className="hidden sm:inline">تنظیمات</span>
+          </button>
           <ThemeToggle />
           <button onClick={onLogout} className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-[#ff3b3b] transition-colors">
             <LogOut size={13} className="-scale-x-100" /> خروج
@@ -89,14 +94,15 @@ function BrandNav({ username, onLogout, maxW = "max-w-5xl" }: { username?: strin
 }
 
 // ── Home screen (customer landing — search only, no upload) ─────────────────
-function Home({ hosts, loading, onSearch, username, onLogout }: {
-  hosts: HostRecord[]; loading: boolean; onSearch: (q: string) => void; username?: string; onLogout: () => void;
+function Home({ hosts, loading, onSearch, username, onLogout, onSettings }: {
+  hosts: HostRecord[]; loading: boolean; onSearch: (q: string) => void;
+  username?: string; onLogout: () => void; onSettings: () => void;
 }) {
   const [q, setQ] = useState("");
 
   return (
     <div className="min-h-screen bg-background flex flex-col">
-      <BrandNav username={username} onLogout={onLogout} />
+      <BrandNav username={username} onLogout={onLogout} onSettings={onSettings} />
 
       {/* Hero */}
       <div className="flex-1 flex flex-col items-center px-4 py-10">
@@ -550,7 +556,7 @@ function HostPage({ host, onBack, backLabel, onHome, onSearch }: {
 // ── Customer app (search dashboard, scoped to the logged-in tenant) ─────────
 function CustomerApp() {
   const { user, logout } = useAuth();
-  const [screen, setScreen] = useState<"home" | "results" | "host">("home");
+  const [screen, setScreen] = useState<"home" | "results" | "host" | "settings">("home");
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<HostRecord[]>([]);
   const [selectedHost, setSelectedHost] = useState<HostRecord | null>(null);
@@ -646,8 +652,11 @@ function CustomerApp() {
     setScreen("host");
   };
 
+  if (screen === "settings") return <Settings onBack={() => setScreen("home")} />;
+
   if (screen === "home") return (
-    <Home hosts={hosts} loading={loading} onSearch={doSearch} username={user?.username} onLogout={logout} />
+    <Home hosts={hosts} loading={loading} onSearch={doSearch}
+      username={user?.username} onLogout={logout} onSettings={() => setScreen("settings")} />
   );
 
   if (screen === "results") return (

@@ -53,6 +53,7 @@ export interface User {
   role: "admin" | "customer";
   displayName: string;
   disabled: boolean;
+  totpEnabled: boolean;
 }
 
 export interface Customer extends User {
@@ -100,6 +101,13 @@ const ERROR_FA: Record<string, string> = {
   "password must be at least 12 characters": "رمز عبور باید دست‌کم ۱۲ نویسه باشد",
   "this password is too easy to guess": "این رمز عبور بیش از حد ساده است؛ رمز دیگری انتخاب کنید",
   "current password is incorrect": "رمز عبور فعلی نادرست است",
+  "the verification code is not correct": "کد تأیید نادرست است",
+  "this sign-in has expired; start again": "مهلت ورود به پایان رسید؛ لطفاً دوباره وارد شوید",
+  "two-factor authentication is already on": "ورود دو عاملی از قبل فعال است",
+  "start the two-factor setup first": "ابتدا مراحل فعال‌سازی را شروع کنید",
+  "could not start two-factor setup": "شروع فعال‌سازی ورود دو عاملی با خطا مواجه شد",
+  "could not finish two-factor setup": "تکمیل فعال‌سازی ورود دو عاملی با خطا مواجه شد",
+  "could not turn two-factor off": "غیرفعال‌سازی ورود دو عاملی با خطا مواجه شد",
   "could not change the password": "تغییر رمز عبور با خطا مواجه شد",
   "could not update the account": "به‌روزرسانی حساب با خطا مواجه شد",
   "this account is suspended": "این حساب غیرفعال شده است؛ با مدیر سامانه تماس بگیرید",
@@ -164,18 +172,74 @@ export class ApiError extends Error {
 }
 
 // ── auth ──────────────────────────────────────────────────────────────────
-export async function login(username: string, password: string): Promise<User> {
-  const data = await request<{ token: string; user: User }>("/api/login", {
+
+// A login either finishes outright or stops for a second factor, in which case
+// the challenge carries the attempt to verifyLoginCode. The challenge is not a
+// session token: it authenticates nothing on its own and expires in minutes.
+export type LoginResult =
+  | { kind: "signed-in"; user: User }
+  | { kind: "needs-code"; challenge: string };
+
+export async function login(username: string, password: string): Promise<LoginResult> {
+  const data = await request<{ token?: string; user?: User; mfaRequired?: boolean; challenge?: string }>(
+    "/api/login",
+    { method: "POST", body: JSON.stringify({ username, password }) },
+  );
+  if (data.mfaRequired && data.challenge) {
+    return { kind: "needs-code", challenge: data.challenge };
+  }
+  tokenStore.set(data.token!);
+  return { kind: "signed-in", user: data.user! };
+}
+
+// Accepts an authenticator code or one of the account's recovery codes.
+export async function verifyLoginCode(challenge: string, code: string): Promise<User> {
+  const data = await request<{ token: string; user: User }>("/api/login/mfa", {
     method: "POST",
-    body: JSON.stringify({ username, password }),
+    body: JSON.stringify({ challenge, code }),
   });
   tokenStore.set(data.token);
   return data.user;
 }
 
-export async function me(): Promise<User> {
-  const data = await request<{ user: User }>("/api/me");
-  return data.user;
+export interface Me {
+  user: User;
+  recoveryCodesRemaining: number;
+}
+
+export async function me(): Promise<Me> {
+  return request<Me>("/api/me");
+}
+
+// ── two-factor authentication ─────────────────────────────────────────────
+
+export interface TOTPSetup {
+  secret: string;
+  uri: string;
+}
+
+// Mints a secret and returns the otpauth URI to render as a QR code. Two-factor
+// stays off until enableTwoFactor confirms a code from it.
+export function startTwoFactorSetup(): Promise<TOTPSetup> {
+  return request<TOTPSetup>("/api/2fa/setup", { method: "POST" });
+}
+
+// Turns two-factor on and returns the recovery codes, shown only this once.
+export async function enableTwoFactor(code: string): Promise<string[]> {
+  const data = await request<{ token: string; recoveryCodes: string[] }>("/api/2fa/enable", {
+    method: "POST",
+    body: JSON.stringify({ code }),
+  });
+  tokenStore.set(data.token);
+  return data.recoveryCodes;
+}
+
+export async function disableTwoFactor(password: string): Promise<void> {
+  const data = await request<{ token: string }>("/api/2fa/disable", {
+    method: "POST",
+    body: JSON.stringify({ password }),
+  });
+  tokenStore.set(data.token);
 }
 
 export function logout() {
@@ -219,6 +283,12 @@ export function resetCustomerPassword(customerId: number, password: string): Pro
     method: "POST",
     body: JSON.stringify({ password }),
   });
+}
+
+// Clears a customer's second factor when they have lost both their
+// authenticator and their recovery codes. Only an admin can do this.
+export function resetCustomerTwoFactor(customerId: number): Promise<{ status: string }> {
+  return request(`/api/admin/customers/${customerId}/2fa/reset`, { method: "POST" });
 }
 
 // Suspending a customer takes effect immediately, not at token expiry.

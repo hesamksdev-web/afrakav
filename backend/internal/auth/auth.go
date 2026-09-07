@@ -26,12 +26,21 @@ func CheckPassword(hash, plain string) bool {
 	return bcrypt.CompareHashAndPassword([]byte(hash), []byte(plain)) == nil
 }
 
+// Token purposes. A token minted for one purpose must never be accepted for
+// another: the half-authenticated token handed out between the password step
+// and the second factor would otherwise be a full session token.
+const (
+	PurposeSession = "session"
+	PurposeMFA     = "mfa"
+)
+
 // Claims is the token payload.
 type Claims struct {
 	UserID   int64  `json:"uid"`
 	Username string `json:"usr"`
 	Role     string `json:"role"`
 	Version  int    `json:"ver"` // must still match the user's token_version
+	Purpose  string `json:"pur"` // PurposeSession or PurposeMFA
 	Exp      int64  `json:"exp"` // unix seconds
 }
 
@@ -51,15 +60,27 @@ func NewIssuer(secret string, ttl time.Duration) *Issuer {
 	return &Issuer{secret: []byte(secret), ttl: ttl}
 }
 
-// Issue returns a signed token for a user. `now` is passed in for testability.
+// Issue returns a signed session token for a user. `now` is passed in for
+// testability.
 func (i *Issuer) Issue(userID int64, username, role string, version int, now time.Time) (string, error) {
+	return i.issue(userID, username, role, version, PurposeSession, i.ttl, now)
+}
+
+// IssueChallenge returns the short-lived token that carries a login from the
+// password step to the second-factor step. It authenticates nothing on its own.
+func (i *Issuer) IssueChallenge(userID int64, username, role string, version int, ttl time.Duration, now time.Time) (string, error) {
+	return i.issue(userID, username, role, version, PurposeMFA, ttl, now)
+}
+
+func (i *Issuer) issue(userID int64, username, role string, version int, purpose string, ttl time.Duration, now time.Time) (string, error) {
 	header := b64.EncodeToString([]byte(`{"alg":"HS256","typ":"JWT"}`))
 	claims := Claims{
 		UserID:   userID,
 		Username: username,
 		Role:     role,
 		Version:  version,
-		Exp:      now.Add(i.ttl).Unix(),
+		Purpose:  purpose,
+		Exp:      now.Add(ttl).Unix(),
 	}
 	payloadJSON, err := json.Marshal(claims)
 	if err != nil {

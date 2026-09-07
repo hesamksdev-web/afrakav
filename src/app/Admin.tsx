@@ -2,14 +2,15 @@ import { useEffect, useRef, useState } from "react";
 import {
   Shield, LogOut, UserPlus, Upload, Users, Server, FileText,
   Loader2, CheckCircle, AlertTriangle, RefreshCw, KeyRound, Ban, Undo2,
+  SlidersHorizontal, ShieldCheck, ShieldOff,
 } from "lucide-react";
 import { useAuth } from "./auth";
 import {
   Customer, listCustomers, createCustomer, adminUpload,
-  resetCustomerPassword, setCustomerStatus,
+  resetCustomerPassword, setCustomerStatus, resetCustomerTwoFactor,
 } from "./api";
 import ThemeToggle from "./components/ThemeToggle";
-import ChangePassword from "./components/ChangePassword";
+import Settings from "./Settings";
 
 const faNum = (n: number) => n.toLocaleString("fa-IR");
 
@@ -17,12 +18,15 @@ export default function Admin() {
   const { user, logout } = useAuth();
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [loading, setLoading] = useState(true);
+  const [settingsOpen, setSettingsOpen] = useState(false);
 
   const refresh = () => {
     setLoading(true);
     listCustomers().then(setCustomers).catch(() => {}).finally(() => setLoading(false));
   };
   useEffect(refresh, []);
+
+  if (settingsOpen) return <Settings onBack={() => setSettingsOpen(false)} />;
 
   return (
     <div className="min-h-screen bg-background flex flex-col">
@@ -34,7 +38,10 @@ export default function Admin() {
           <span className="text-[10px] text-muted-foreground border-s border-border ps-2">مدیریت</span>
           <div className="ms-auto flex items-center gap-4">
             <span className="text-xs font-mono text-muted-foreground hidden sm:block" dir="ltr">{user?.username}</span>
-            <ChangePassword />
+            <button onClick={() => setSettingsOpen(true)} title="تنظیمات حساب"
+              className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-primary transition-colors">
+              <SlidersHorizontal size={13} /> <span className="hidden sm:inline">تنظیمات</span>
+            </button>
             <ThemeToggle />
             <button onClick={logout} className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-[#ff3b3b] transition-colors">
               <LogOut size={13} className="-scale-x-100" /> خروج
@@ -88,6 +95,17 @@ export default function Admin() {
                         {c.disabled && (
                           <span className="text-[9px] text-[#ff3b3b] border border-[#ff3b3b]/30 bg-[#ff3b3b]/5 rounded px-1.5 py-0.5">
                             غیرفعال
+                          </span>
+                        )}
+                        {c.totpEnabled ? (
+                          <span title="ورود دو عاملی فعال است"
+                            className="flex items-center gap-0.5 text-[9px] text-primary border border-primary/30 bg-primary/5 rounded px-1.5 py-0.5">
+                            <ShieldCheck size={9} /> دو عاملی
+                          </span>
+                        ) : (
+                          <span title="این مشتری هنوز ورود دو عاملی را فعال نکرده است"
+                            className="text-[9px] text-muted-foreground border border-border rounded px-1.5 py-0.5">
+                            بدون دو عاملی
                           </span>
                         )}
                       </div>
@@ -238,6 +256,18 @@ function CustomerActions({ customer, onChanged }: { customer: Customer; onChange
     } finally { setBusy(false); }
   };
 
+  const resetTwoFactor = async () => {
+    if (!confirm(`ورود دو عاملی «${customer.username}» بازنشانی شود؟ این کار قفل حساب را باز می‌کند و مشتری باید دوباره آن را فعال کند.`)) return;
+    setBusy(true); setMsg(null);
+    try {
+      await resetCustomerTwoFactor(customer.id);
+      setMsg({ ok: true, text: "ورود دو عاملی بازنشانی شد." });
+      onChanged();
+    } catch (err: any) {
+      setMsg({ ok: false, text: err?.message || "بازنشانی ناموفق بود" });
+    } finally { setBusy(false); }
+  };
+
   const reset = async (e: React.FormEvent) => {
     e.preventDefault();
     setBusy(true); setMsg(null);
@@ -259,6 +289,13 @@ function CustomerActions({ customer, onChanged }: { customer: Customer; onChange
           className="text-muted-foreground hover:text-primary transition-colors disabled:opacity-40">
           <KeyRound size={13} />
         </button>
+        {customer.totpEnabled && (
+          <button type="button" onClick={resetTwoFactor} disabled={busy}
+            title="بازنشانی ورود دو عاملی — وقتی مشتری گوشی و کدهای بازیابی خود را از دست داده است"
+            className="text-muted-foreground hover:text-[#ff8c00] transition-colors disabled:opacity-40">
+            <ShieldOff size={13} />
+          </button>
+        )}
         <button type="button" onClick={toggle} disabled={busy}
           title={customer.disabled ? "فعال‌سازی حساب" : "غیرفعال‌سازی حساب"}
           className={`transition-colors disabled:opacity-40 ${

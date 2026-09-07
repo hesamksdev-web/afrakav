@@ -1,25 +1,50 @@
 import { useState } from "react";
-import { Shield, Lock, User as UserIcon, Loader2 } from "lucide-react";
+import { Shield, Lock, User as UserIcon, Loader2, ShieldCheck, ArrowRight } from "lucide-react";
 import { useAuth } from "./auth";
 import ThemeToggle from "./components/ThemeToggle";
 
 export default function Login() {
-  const { login } = useAuth();
+  const { login, verifyCode } = useAuth();
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  // Set when the password was right but the account also needs a second factor.
+  // It is not a session token — it only carries this attempt to the next step.
+  const [challenge, setChallenge] = useState<string | null>(null);
+  const [code, setCode] = useState("");
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     setBusy(true); setError("");
     try {
-      await login(username.trim(), password);
+      const result = await login(username.trim(), password);
+      if (result.kind === "needs-code") {
+        setChallenge(result.challenge);
+        setPassword("");
+      }
     } catch (err: any) {
       setError(err?.message || "ورود ناموفق بود");
     } finally {
       setBusy(false);
     }
+  };
+
+  const submitCode = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setBusy(true); setError("");
+    try {
+      await verifyCode(challenge!, code.trim());
+    } catch (err: any) {
+      setError(err?.message || "کد تأیید پذیرفته نشد");
+      setCode("");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const startOver = () => {
+    setChallenge(null); setCode(""); setError(""); setPassword("");
   };
 
   return (
@@ -36,6 +61,44 @@ export default function Login() {
           سامانهٔ هوش سطح حمله — ورود مشتریان و مدیران
         </p>
 
+        {challenge ? (
+          <form onSubmit={submitCode} className="bg-card border border-border rounded p-6 space-y-4">
+            <div className="flex items-center gap-2">
+              <ShieldCheck size={15} className="text-primary" />
+              <span className="text-sm font-semibold text-foreground">تأیید دو مرحله‌ای</span>
+            </div>
+            <p className="text-[11px] text-muted-foreground leading-relaxed">
+              کد شش‌رقمی برنامهٔ احرازکنندهٔ خود را وارد کنید. اگر به آن دسترسی ندارید،
+              می‌توانید یکی از کدهای بازیابی را بنویسید.
+            </p>
+
+            <input
+              autoFocus value={code}
+              onChange={e => setCode(e.target.value.replace(/[^0-9a-fA-F-]/g, "").slice(0, 19))}
+              inputMode="numeric" autoComplete="one-time-code" placeholder="۱۲۳۴۵۶" dir="ltr"
+              className="w-full py-2.5 px-2 bg-secondary border border-border rounded text-center text-lg font-mono tracking-[0.3em] text-foreground focus:outline-none focus:border-primary/40"
+            />
+
+            {error && (
+              <div className="text-xs text-[#ff3b3b] border border-[#ff3b3b]/25 bg-[#ff3b3b]/5 rounded px-3 py-2">
+                {error}
+              </div>
+            )}
+
+            <button
+              type="submit" disabled={busy || code.length < 6}
+              className="w-full flex items-center justify-center gap-2 py-2.5 rounded bg-primary/15 border border-primary/30 text-primary text-sm hover:bg-primary/25 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+            >
+              {busy ? <Loader2 size={14} className="animate-spin" /> : <ShieldCheck size={13} />}
+              {busy ? "در حال بررسی…" : "تأیید و ورود"}
+            </button>
+
+            <button type="button" onClick={startOver}
+              className="w-full flex items-center justify-center gap-1.5 text-[11px] text-muted-foreground hover:text-foreground transition-colors">
+              <ArrowRight size={11} /> بازگشت و ورود با حساب دیگر
+            </button>
+          </form>
+        ) : (
         <form onSubmit={submit} className="bg-card border border-border rounded p-6 space-y-4">
           <div>
             <label className="text-[11px] text-muted-foreground">نام کاربری</label>
@@ -77,6 +140,7 @@ export default function Login() {
             {busy ? "در حال ورود…" : "ورود"}
           </button>
         </form>
+        )}
 
         <p className="text-center text-[11px] text-muted-foreground mt-6">
           حساب کاربری شما توسط مدیر افرانت برایتان ایجاد می‌شود.

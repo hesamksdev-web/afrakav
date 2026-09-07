@@ -85,4 +85,20 @@ CREATE INDEX IF NOT EXISTS hosts_customer_idx ON hosts (customer_id);
 -- with. disabled locks an account without destroying its scan history.
 ALTER TABLE users ADD COLUMN IF NOT EXISTS token_version INT     NOT NULL DEFAULT 1;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS disabled      BOOLEAN NOT NULL DEFAULT false;
+
+-- Two-factor authentication. totp_secret holds a pending secret from the moment
+-- enrolment starts; totp_enabled only turns true once the account has proved it
+-- can produce a code. totp_last_step blocks replay of a code inside its window.
+ALTER TABLE users ADD COLUMN IF NOT EXISTS totp_secret    TEXT    NOT NULL DEFAULT '';
+ALTER TABLE users ADD COLUMN IF NOT EXISTS totp_enabled   BOOLEAN NOT NULL DEFAULT false;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS totp_last_step BIGINT  NOT NULL DEFAULT 0;
+
+-- One-time recovery codes, stored as SHA-256 hashes. A used code is deleted
+-- rather than flagged, so a row's presence is the whole state.
+CREATE TABLE IF NOT EXISTS recovery_codes (
+    user_id    BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    code_hash  TEXT   NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    PRIMARY KEY (user_id, code_hash)
+);
 `

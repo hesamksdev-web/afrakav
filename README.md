@@ -71,13 +71,34 @@ pnpm install
 VITE_API_URL=http://localhost:8080 pnpm dev   # Vite dev server on :5173
 ```
 
+## Two-factor authentication
+
+Any account can turn on TOTP two-factor from **تنظیمات** (Settings). Enrolment
+mints a secret, shows it as a QR code rendered in the browser, and only switches
+two-factor on once the account produces a valid code — a half-finished enrolment
+cannot lock anyone out. Enabling returns ten single-use recovery codes, shown
+once and stored only as SHA-256 hashes.
+
+With two-factor on, `POST /api/login` answers with a five-minute *challenge*
+rather than a session token. The challenge carries a distinct purpose claim and
+is refused everywhere a session token is expected, so a password alone signs
+nobody in. `POST /api/login/mfa` accepts either a live code or a recovery code
+and returns the real token. A code that has already been used inside its own
+30-second window is rejected, and nginx rate-limits the whole `/api/login`
+prefix so a six-digit code cannot be walked.
+
+If a customer loses both their authenticator and their recovery codes, an admin
+clears the second factor from the customer row in the admin panel; nobody can
+read the secret back out.
+
 ## Backend API
 
 Public:
 
 | Method | Path            | Description                                  |
 |--------|-----------------|----------------------------------------------|
-| POST   | `/api/login`    | `{username,password}` → `{token, user}`      |
+| POST   | `/api/login`    | `{username,password}` → `{token, user}`, or `{mfaRequired, challenge}` |
+| POST   | `/api/login/mfa`| `{challenge, code}` → `{token, user}`        |
 | GET    | `/api/health`   | liveness probe                               |
 
 Authenticated (`Authorization: Bearer <token>`):
@@ -91,6 +112,9 @@ Authenticated (`Authorization: Bearer <token>`):
 | GET    | `/api/stats`       | dashboard aggregates, scoped                            |
 | GET    | `/api/scans`       | upload history, scoped                                  |
 | POST   | `/api/password`    | `{currentPassword,newPassword}` → a replacement token   |
+| POST   | `/api/2fa/setup`   | begin enrolment → `{secret, uri}`                       |
+| POST   | `/api/2fa/enable`  | `{code}` → `{token, recoveryCodes}`                     |
+| POST   | `/api/2fa/disable` | `{password}`                                            |
 
 Admin only:
 
@@ -101,6 +125,7 @@ Admin only:
 | POST   | `/api/admin/upload`      | multipart: `file=.nessus`, `customerId=<id>`      |
 | POST   | `/api/admin/customers/{id}/password` | `{password}` — also ends that customer's sessions |
 | POST   | `/api/admin/customers/{id}/status`   | `{disabled}` — suspend or restore an account      |
+| POST   | `/api/admin/customers/{id}/2fa/reset`| clear a second factor the customer is locked out of |
 
 **Search grammar:** `port:445`, `tag:rdp`, `vuln:CVE-2021-44228`, `cve:…`,
 `product:jenkins`, `os:windows`, `subnet:10.20.30` (a /24, `net:` also works),
