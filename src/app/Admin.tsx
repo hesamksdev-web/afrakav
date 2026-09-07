@@ -110,7 +110,7 @@ export default function Admin() {
       </div>
 
       <footer className="mt-auto border-t border-border py-4 px-4 text-center text-[11px] text-muted-foreground">
-        افرانت ® افراشودَن · پنل مدیریت
+        افرانت ® افراکاو · پنل مدیریت
       </footer>
     </div>
   );

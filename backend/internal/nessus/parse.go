@@ -49,6 +49,16 @@ type xmlReportItem struct {
 	SeeAlso       string `xml:"see_also"`
 	PluginOutput  string `xml:"plugin_output"`
 	SvcProduct    string `xml:"product"`
+
+	ExploitAvailable   string `xml:"exploit_available"`
+	ExploitedByMalware string `xml:"exploited_by_malware"`
+	ExploitabilityEase string `xml:"exploitability_ease"`
+	MetasploitOK       string `xml:"exploit_framework_metasploit"`
+	MetasploitName     string `xml:"metasploit_name"`
+	CanvasOK           string `xml:"exploit_framework_canvas"`
+	CanvasPackage      string `xml:"canvas_package"`
+	CoreOK             string `xml:"exploit_framework_core"`
+	D2ElliotOK         string `xml:"exploit_framework_d2_elliot"`
 }
 
 // Parse reads a Nessus v2 XML document and returns the hosts it describes.
@@ -80,21 +90,15 @@ func convertHost(rh xmlReportHost) Host {
 	ip := firstNonEmpty(props["host-ip"], rh.Name)
 
 	host := Host{
-		IP:          ip,
-		Org:         firstNonEmpty(props["host-fqdn"], "—"),
-		ISP:         "Private Network",
-		ASN:         firstNonEmpty(props["bios-uuid"], "N/A"),
-		OS:          firstNonEmpty(props["operating-system"], "Unknown"),
-		Country:     "—",
-		CountryCode: "—",
-		City:        "—",
-		Region:      "—",
-		LastScan:    normalizeTime(firstNonEmpty(props["HOST_END_TIMESTAMP"], props["HOST_END"])),
-		Hostnames:   []string{},
-		Domains:     []string{},
-		Tags:        []string{},
-		Ports:       []Port{},
-		Vulns:       []Vuln{},
+		IP:        ip,
+		Org:       firstNonEmpty(props["host-fqdn"], "—"),
+		OS:        firstNonEmpty(props["operating-system"], "Unknown"),
+		LastScan:  normalizeTime(firstNonEmpty(props["HOST_END_TIMESTAMP"], props["HOST_END"])),
+		Hostnames: []string{},
+		Domains:   []string{},
+		Tags:      []string{},
+		Ports:     []Port{},
+		Vulns:     []Vuln{},
 	}
 
 	// Hostnames / domains.
@@ -145,6 +149,11 @@ func convertHost(rh xmlReportHost) Host {
 				Description: collapse(it.Description),
 				Solution:    collapse(it.Solution),
 				SeeAlso:     safeURL(firstLine(it.SeeAlso)),
+
+				ExploitAvailable:   isTrue(it.ExploitAvailable),
+				ExploitedByMalware: isTrue(it.ExploitedByMalware),
+				ExploitEase:        exploitEase(it.ExploitabilityEase),
+				ExploitFrameworks:  exploitFrameworks(it),
 			})
 		}
 
@@ -227,6 +236,57 @@ func firstCVE(s string) string {
 		}
 	}
 	return ""
+}
+
+// isTrue reads the "true"/"false" strings Nessus writes into boolean tags.
+func isTrue(s string) bool {
+	return strings.EqualFold(strings.TrimSpace(s), "true")
+}
+
+// exploitEase normalises Nessus's exploitability_ease phrasing to one of three
+// labels the UI knows how to render.
+func exploitEase(s string) string {
+	// Order matters: "No known exploits are available" contains "are available",
+	// so the negative phrasings have to be tested first.
+	switch v := strings.ToLower(strings.TrimSpace(s)); {
+	case v == "":
+		return ""
+	case strings.Contains(v, "no exploit is required"):
+		return "no-exploit-needed"
+	case strings.Contains(v, "no known exploit"):
+		return "none-known"
+	case strings.Contains(v, "available"):
+		return "public-exploit"
+	default:
+		return "difficult"
+	}
+}
+
+// exploitFrameworks lists the offensive toolkits that ship a module for this
+// finding — the clearest signal that it is weaponised, not just theoretical.
+func exploitFrameworks(it xmlReportItem) []string {
+	var out []string
+	if isTrue(it.MetasploitOK) {
+		name := "Metasploit"
+		if n := strings.TrimSpace(it.MetasploitName); n != "" {
+			name += ": " + n
+		}
+		out = append(out, name)
+	}
+	if isTrue(it.CanvasOK) {
+		name := "Canvas"
+		if n := strings.TrimSpace(it.CanvasPackage); n != "" {
+			name += ": " + n
+		}
+		out = append(out, name)
+	}
+	if isTrue(it.CoreOK) {
+		out = append(out, "Core Impact")
+	}
+	if isTrue(it.D2ElliotOK) {
+		out = append(out, "D2 Elliot")
+	}
+	return out
 }
 
 // safeURL keeps only plain http(s) links. A .nessus file comes from outside the

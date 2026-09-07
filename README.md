@@ -1,4 +1,4 @@
-# Afranet — Afrashodan
+# Afranet — Afrakav
 
 A Shodan-style **multi-tenant exposure-intelligence platform** for Afranet. An admin
 uploads Tenable **Nessus** (`.nessus`) scans and assigns each to a customer; customers
@@ -29,18 +29,22 @@ Brings up Postgres, the Go backend, and the nginx-served UI. nginx proxies `/api
 the backend (single origin, no CORS). Postgres data persists in a named volume.
 
 ```bash
+cp .env.example .env    # then fill in the secrets
 docker compose up -d --build
 ```
 
 - UI:          http://localhost:8081
 - Backend API: http://localhost:8080 (also at http://localhost:8081/api)
 
-**Default seeded accounts** (set in `docker-compose.yml` — change for production):
+On a server use `./deploy.sh`, which selects `docker-compose.prod.yml` (and
+`docker-compose.tls.yml` once `certs/` exists) instead of the development
+overrides. See `scripts/gen-certs.sh` for the certificate.
 
-| Role     | Username | Password     |
-|----------|----------|--------------|
-| Admin    | `admin`  | `admin12345` |
-| Customer | `demo`   | `demo12345`  | ← seeded with the sample scan
+**Accounts** come from `.env` (see `.env.example`); there are no built-in
+defaults. `ADMIN_USER`/`ADMIN_PASSWORD` create the admin on first boot, and the
+optional `DEMO_USER`/`DEMO_PASSWORD` seed a customer with the bundled sample
+scan. Passwords must be at least 12 characters, and `JWT_SECRET` at least 32 —
+the backend refuses to start without them.
 
 ```bash
 docker compose ps        # status / health
@@ -56,8 +60,9 @@ Needs a running Postgres. Point the backend at it via `DATABASE_URL`:
 ```bash
 cd backend
 export DATABASE_URL="postgres://afrashodan:afrashodan@localhost:5432/afrashodan?sslmode=disable"
-export JWT_SECRET="dev-secret" ADMIN_USER=admin ADMIN_PASSWORD=admin12345
-export DEMO_USER=demo DEMO_PASSWORD=demo12345 AFRASHODAN_SEED=data/sample.nessus
+export JWT_SECRET="local-development-only-secret-not-for-servers"
+export ADMIN_USER=admin ADMIN_PASSWORD=local-dev-admin-pass
+export DEMO_USER=demo DEMO_PASSWORD=local-dev-demo-pass AFRASHODAN_SEED=data/sample.nessus
 go run .
 ```
 
@@ -85,6 +90,7 @@ Authenticated (`Authorization: Bearer <token>`):
 | GET    | `/api/search?q=`   | Shodan-style query, scoped                              |
 | GET    | `/api/stats`       | dashboard aggregates, scoped                            |
 | GET    | `/api/scans`       | upload history, scoped                                  |
+| POST   | `/api/password`    | `{currentPassword,newPassword}` → a replacement token   |
 
 Admin only:
 
@@ -93,10 +99,24 @@ Admin only:
 | GET    | `/api/admin/customers`   | list customers with host/scan counts              |
 | POST   | `/api/admin/customers`   | `{username,password,displayName}`                 |
 | POST   | `/api/admin/upload`      | multipart: `file=.nessus`, `customerId=<id>`      |
+| POST   | `/api/admin/customers/{id}/password` | `{password}` — also ends that customer's sessions |
+| POST   | `/api/admin/customers/{id}/status`   | `{disabled}` — suspend or restore an account      |
 
 **Search grammar:** `port:445`, `tag:rdp`, `vuln:CVE-2021-44228`, `cve:…`,
-`product:jenkins`, `os:windows`, or a bare term matching IP / hostname / domain / OS /
-org / port / service / CVE / plugin name.
+`product:jenkins`, `os:windows`, `subnet:10.20.30` (a /24, `net:` also works),
+`has:exploit`, `has:malware`, `has:critical`, `exploit:true|false`, `*` for
+everything, or a bare term matching IP / hostname / domain / OS / org / port /
+service / CVE / plugin name.
+
+**Exploit intelligence:** the parser reads `exploit_available`,
+`exploited_by_malware`, `exploitability_ease` and the framework tags
+(`exploit_framework_metasploit` and friends) from each Nessus finding. Findings
+with a published exploit are surfaced on the customer dashboard ahead of
+everything else, because CVSS alone does not tell you what is weaponised.
+
+**No geolocation:** a `.nessus` file records no country, city, ISP or ASN, so the
+platform does not display any. A host's place in the network is described by its
+`/24` subnet and its operating system, both derived from the scan itself.
 
 ### Environment variables (backend)
 

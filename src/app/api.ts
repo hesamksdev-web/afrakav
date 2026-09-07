@@ -1,4 +1,4 @@
-// Client for the Afrashodan Go backend. All data endpoints require a Bearer
+// Client for the Afrakav Go backend. All data endpoints require a Bearer
 // token obtained from login(); the token is persisted in localStorage so a
 // refresh keeps the session. Customer requests are scoped server-side to the
 // caller — the API never returns another tenant's hosts.
@@ -13,6 +13,10 @@ export interface PortEntry {
 
 export type Severity = "Critical" | "High" | "Medium" | "Low" | "Info";
 
+// exploitEase mirrors the backend's normalised reading of the Nessus
+// exploitability_ease field.
+export type ExploitEase = "public-exploit" | "no-exploit-needed" | "none-known" | "difficult";
+
 export interface Vuln {
   cve: string;
   pluginId: string;
@@ -23,6 +27,12 @@ export interface Vuln {
   description: string;
   solution: string;
   seeAlso?: string;
+  // Exploit intelligence from the Nessus plugin. A finding with a published
+  // exploit is the one to fix first, whatever its CVSS score says.
+  exploitAvailable: boolean;
+  exploitedByMalware: boolean;
+  exploitEase?: ExploitEase;
+  exploitFrameworks?: string[];
 }
 
 export interface HostRecord {
@@ -30,13 +40,7 @@ export interface HostRecord {
   hostnames: string[];
   domains: string[];
   org: string;
-  isp: string;
-  asn: string;
   os: string;
-  country: string;
-  countryCode: string;
-  city: string;
-  region: string;
   lastScan: string;
   tags: string[];
   ports: PortEntry[];
@@ -63,11 +67,16 @@ export interface Stats {
   totalCVEs: number;
   source: string;
   bySeverity: Record<string, number>;
+  exploitableFindings: number;
+  exploitableHosts: number;
+  malwareFindings: number;
 }
 
 const API_BASE: string =
   (import.meta as any).env?.VITE_API_URL?.replace(/\/$/, "") ?? "";
 
+// Storage key kept from the platform's earlier name so a rename does not sign
+// everyone out.
 const TOKEN_KEY = "afrashodan_token";
 
 export const tokenStore = {

@@ -21,6 +21,8 @@
         <cvss3_base_score>9.6</cvss3_base_score>
         <cve>CVE-2022-3602</cve>
         <see_also>https://www.openssl.org/news/secadv/20221101.txt</see_also>
+        <exploit_available>false</exploit_available>
+        <exploitability_ease>No known exploits are available</exploitability_ease>
         <plugin_output>HTTP/1.1 200 OK
 Server: nginx/1.22.1
 Strict-Transport-Security: max-age=31536000</plugin_output>
@@ -43,6 +45,13 @@ Strict-Transport-Security: max-age=31536000</plugin_output>
         <solution>Apply the appropriate Microsoft patch and enable NLA.</solution>
         <cvss_base_score>9.8</cvss_base_score>
         <cve>CVE-2019-0708</cve>
+        <exploit_available>true</exploit_available>
+        <exploitability_ease>Exploits are available</exploitability_ease>
+        <exploited_by_malware>true</exploited_by_malware>
+        <exploit_framework_metasploit>true</exploit_framework_metasploit>
+        <metasploit_name>CVE-2019-0708 BlueKeep Microsoft Windows RDP RCE</metasploit_name>
+        <exploit_framework_canvas>true</exploit_framework_canvas>
+        <canvas_package>D2ExploitPack</canvas_package>
         <plugin_output>RDP\r\nNLA required: No\r\nOS: Windows Server 2019</plugin_output>
       </ReportItem>
       <ReportItem port="445" svc_name="cifs" protocol="tcp" severity="4" pluginID="97833" pluginName="MS17-010 SMB Server (EternalBlue)" pluginFamily="Windows">
@@ -50,6 +59,12 @@ Strict-Transport-Security: max-age=31536000</plugin_output>
         <solution>Apply MS17-010 and disable SMBv1.</solution>
         <cvss_base_score>9.3</cvss_base_score>
         <cve>CVE-2017-0144</cve>
+        <exploit_available>true</exploit_available>
+        <exploitability_ease>Exploits are available</exploitability_ease>
+        <exploited_by_malware>true</exploited_by_malware>
+        <exploit_framework_metasploit>true</exploit_framework_metasploit>
+        <metasploit_name>MS17-010 EternalBlue SMB Remote Windows Kernel Pool Corruption</metasploit_name>
+        <exploit_framework_core>true</exploit_framework_core>
       </ReportItem>
     </ReportHost>
   </Report>

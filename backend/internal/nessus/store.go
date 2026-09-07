@@ -135,6 +135,27 @@ func matches(h Host, q string) bool {
 			return false
 		case "os":
 			return strings.Contains(strings.ToLower(h.OS), val)
+		case "subnet", "net":
+			// subnet:10.20.30 matches 10.20.30.* and nothing wider.
+			return strings.HasPrefix(h.IP, strings.TrimSuffix(val, ".")+".")
+		case "has":
+			switch val {
+			case "exploit":
+				return hasExploit(h)
+			case "malware":
+				for _, v := range h.Vulns {
+					if v.ExploitedByMalware {
+						return true
+					}
+				}
+				return false
+			case "critical":
+				return countSev(h, SeverityCritical) > 0
+			}
+			return false
+		case "exploit":
+			want := val == "true" || val == "yes" || val == "1"
+			return hasExploit(h) == want
 		}
 	}
 
@@ -174,6 +195,16 @@ func matches(h Host, q string) bool {
 	return false
 }
 
+// hasExploit reports whether any finding on the host is known to be exploitable.
+func hasExploit(h Host) bool {
+	for _, v := range h.Vulns {
+		if v.ExploitAvailable {
+			return true
+		}
+	}
+	return false
+}
+
 func splitFilter(q string) (key, val string, ok bool) {
 	i := strings.Index(q, ":")
 	if i <= 0 {
@@ -199,6 +230,12 @@ type Stats struct {
 	TotalCVEs  int            `json:"totalCVEs"`
 	Source     string         `json:"source"`
 	BySeverity map[string]int `json:"bySeverity"`
+
+	// Exploitable findings are the ones with a published exploit; they deserve
+	// their own counter because CVSS alone does not surface them.
+	ExploitableFindings int `json:"exploitableFindings"`
+	ExploitableHosts    int `json:"exploitableHosts"`
+	MalwareFindings     int `json:"malwareFindings"`
 }
 
 // Stats computes aggregate counts across all hosts.
@@ -217,11 +254,22 @@ func ComputeStats(hosts []Host, source string) Stats {
 	seenCVE := map[string]bool{}
 	for _, h := range hosts {
 		out.OpenPorts += len(h.Ports)
+		exploitableHost := false
 		for _, v := range h.Vulns {
 			out.BySeverity[string(v.Severity)]++
 			if v.CVE != "" && v.CVE != "N/A" {
 				seenCVE[v.CVE] = true
 			}
+			if v.ExploitAvailable {
+				out.ExploitableFindings++
+				exploitableHost = true
+			}
+			if v.ExploitedByMalware {
+				out.MalwareFindings++
+			}
+		}
+		if exploitableHost {
+			out.ExploitableHosts++
 		}
 	}
 	out.TotalCVEs = len(seenCVE)

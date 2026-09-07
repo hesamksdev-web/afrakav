@@ -30,7 +30,7 @@ export default function Login() {
         <div className="flex items-center justify-center gap-2 mb-1">
           <Shield size={20} className="text-primary" />
           <span className="font-mono font-bold text-primary tracking-widest text-lg" dir="ltr">AFRANET</span>
-          <span className="text-[11px] text-muted-foreground border-s border-border ps-2 ms-1">افراشودَن</span>
+          <span className="text-[11px] text-muted-foreground border-s border-border ps-2 ms-1">افراکاو</span>
         </div>
         <p className="text-center text-xs text-muted-foreground mb-8">
           سامانهٔ هوش سطح حمله — ورود مشتریان و مدیران

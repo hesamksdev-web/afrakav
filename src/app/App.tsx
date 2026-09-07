@@ -1,58 +1,17 @@
 import { useState, useEffect } from "react";
 import {
-  Search, Shield, AlertTriangle, X, FileText,
+  Search, Shield, AlertTriangle, X,
   ChevronDown, ChevronUp, CheckCircle,
   Cpu, Wifi, ExternalLink, Tag, Activity,
-  Building, LogOut, Loader2,
+  Building, LogOut, Loader2, Zap,
 } from "lucide-react";
-import { fetchHosts, safeHref } from "./api";
+import { fetchHosts, safeHref, HostRecord, Severity } from "./api";
 import { AuthProvider, useAuth } from "./auth";
 import Login from "./Login";
 import Admin from "./Admin";
-import WorldMap, { CountryStat } from "./components/WorldMap";
+import Dashboard, { ExploitBadges } from "./components/Dashboard";
 import ThemeToggle from "./components/ThemeToggle";
 import ChangePassword from "./components/ChangePassword";
-
-// ── Types ──────────────────────────────────────────────────────────────────
-type Severity = "Critical" | "High" | "Medium" | "Low" | "Info";
-
-interface PortEntry {
-  port: number;
-  proto: "tcp" | "udp";
-  service: string;
-  product: string;
-  banner: string;
-}
-
-interface Vuln {
-  cve: string;
-  pluginId: string;
-  name: string;
-  severity: Severity;
-  cvss: number;
-  family: string;
-  description: string;
-  solution: string;
-  seeAlso?: string;
-}
-
-interface HostRecord {
-  ip: string;
-  hostnames: string[];
-  domains: string[];
-  org: string;
-  isp: string;
-  asn: string;
-  os: string;
-  country: string;
-  countryCode: string;
-  city: string;
-  region: string;
-  lastScan: string;
-  tags: string[];
-  ports: PortEntry[];
-  vulns: Vuln[];
-}
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 const faNum = (n: number) => n.toLocaleString("fa-IR");
@@ -101,6 +60,12 @@ function timeAgo(iso: string) {
 }
 
 // ── Brand nav (shared) ─────────────────────────────────────────────────────
+/** 10.20.30.11 → 10.20.30.0/24; anything that is not a dotted quad is passed through. */
+function subnetLabel(ip: string) {
+  const parts = ip.split(".");
+  return parts.length === 4 ? `${parts.slice(0, 3).join(".")}.0/24` : ip;
+}
+
 function BrandNav({ username, onLogout, maxW = "max-w-5xl" }: { username?: string; onLogout: () => void; maxW?: string }) {
   return (
     <nav className="border-b border-border bg-card">
@@ -108,7 +73,7 @@ function BrandNav({ username, onLogout, maxW = "max-w-5xl" }: { username?: strin
         <div className="flex items-center gap-2">
           <Shield size={16} className="text-primary" />
           <span className="font-mono font-bold text-primary tracking-widest text-sm" dir="ltr">AFRANET</span>
-          <span className="text-[10px] text-muted-foreground border-s border-border ps-2">افراشودَن</span>
+          <span className="text-[10px] text-muted-foreground border-s border-border ps-2">افراکاو</span>
         </div>
         <div className="ms-auto flex items-center gap-4">
           {username && <span className="text-xs font-mono text-muted-foreground hidden sm:block" dir="ltr">{username}</span>}
@@ -129,25 +94,13 @@ function Home({ hosts, loading, onSearch, username, onLogout }: {
 }) {
   const [q, setQ] = useState("");
 
-  // Aggregate hosts per country for the world map.
-  const countryStats: CountryStat[] = Array.from(
-    hosts.reduce((m, h) => {
-      const code = h.countryCode?.toUpperCase();
-      if (!code) return m;
-      const cur = m.get(code) ?? { code, name: h.country || code, hosts: 0, critical: 0 };
-      cur.hosts += 1;
-      cur.critical += h.vulns.filter(v => v.severity === "Critical").length;
-      return m.set(code, cur);
-    }, new Map<string, CountryStat>()).values(),
-  );
-
   return (
     <div className="min-h-screen bg-background flex flex-col">
       <BrandNav username={username} onLogout={onLogout} />
 
       {/* Hero */}
-      <div className="flex-1 flex flex-col items-center justify-center px-4 py-12">
-        <div className="w-full max-w-2xl">
+      <div className="flex-1 flex flex-col items-center px-4 py-10">
+        <div className="w-full max-w-3xl">
           <h1 className="text-center text-3xl sm:text-4xl font-bold text-foreground mb-2 tracking-tight" style={{ fontFamily: "'Vazirmatn', sans-serif" }}>
             جست‌وجو در <span className="text-primary">شبکهٔ شما</span>
           </h1>
@@ -173,48 +126,30 @@ function Home({ hosts, loading, onSearch, username, onLogout }: {
 
           {/* Example queries */}
           <div className="flex flex-wrap gap-2 justify-center mb-10" dir="ltr">
-            {["port:445", "port:3389 os:windows", "vuln:CVE-2021-44228", "product:jenkins", "tag:rdp", "country:ir"].map(ex => (
+            {["has:exploit", "port:445", "vuln:CVE-2021-44228", "product:jenkins", "tag:rdp", "os:windows"].map(ex => (
               <button key={ex} onClick={() => onSearch(ex)}
                 className="text-xs font-mono text-muted-foreground hover:text-primary border border-border hover:border-primary/30 rounded px-2.5 py-1 cursor-pointer transition-colors">{ex}</button>
             ))}
           </div>
 
-          {/* World map — geographic spread of this customer's hosts.
-              Nessus uploads carry no geo data (backend fills "—"), so the map
-              falls back internally to a badged sample distribution. */}
-          {!loading && (
-            <WorldMap stats={countryStats} onSelect={code => onSearch(`country:${code.toLowerCase()}`)} />
-          )}
-
-          {/* Bottom stats strip */}
+          {/* Overview of this customer's own scans. It renders before any search
+              is run, so the landing page answers "what do I have?" on its own. */}
           {loading ? (
-            <div className="border border-border rounded bg-card py-6 flex justify-center text-muted-foreground">
+            <div className="border border-border rounded bg-card py-10 flex justify-center text-muted-foreground">
               <Loader2 size={18} className="animate-spin" />
             </div>
           ) : hosts.length === 0 ? (
-            <div className="border border-border rounded bg-card py-6 text-center text-xs text-muted-foreground">
+            <div className="border border-border rounded bg-card py-8 text-center text-xs text-muted-foreground">
               هنوز اسکنی برای حساب شما بارگذاری نشده است. لطفاً با تیم افرانت تماس بگیرید.
             </div>
           ) : (
-            <div className="border border-border rounded bg-card divide-x divide-border flex overflow-hidden">
-              {[
-                { label: "میزبان‌های اسکن", value: faNum(hosts.length) },
-                { label: "یافته‌های بحرانی", value: faNum(hosts.reduce((a, h) => a + h.vulns.filter(v => v.severity === "Critical").length, 0)) },
-                { label: "مجموع CVEها", value: faNum(new Set(hosts.flatMap(h => h.vulns.map(v => v.cve)).filter(c => c !== "N/A")).size) },
-                { label: "پورت‌های باز", value: faNum(hosts.reduce((a, h) => a + h.ports.length, 0)) },
-              ].map(s => (
-                <button key={s.label} onClick={() => onSearch("")} className="flex-1 text-center py-3 px-2 hover:bg-secondary/30 transition-colors">
-                  <div className="text-xl font-bold text-primary">{s.value}</div>
-                  <div className="text-[10px] text-muted-foreground mt-0.5">{s.label}</div>
-                </button>
-              ))}
-            </div>
+            <Dashboard hosts={hosts} onSearch={onSearch} />
           )}
         </div>
       </div>
 
       <footer className="border-t border-border py-4 px-4 text-center text-[11px] text-muted-foreground">
-        افرانت ® افراشودَن — هوش سطح حمله · مبتنی بر Nessus · <span dir="ltr">soc@afranet.io</span>
+        افرانت ® افراکاو — هوش سطح حمله · مبتنی بر Nessus · <span dir="ltr">soc@afranet.io</span>
       </footer>
     </div>
   );
@@ -308,13 +243,18 @@ function SearchResults({
                       <div className="flex items-center gap-2 mb-0.5 flex-wrap">
                         <span className="font-mono font-bold text-primary text-base group-hover:underline" dir="ltr">{h.ip}</span>
                         {critCount > 0 && <span className="text-[9px] font-bold px-1.5 py-0.5 bg-[#ff3b3b]/10 border border-[#ff3b3b]/25 text-[#ff3b3b] rounded">{faNum(critCount)} بحرانی</span>}
+                        {h.vulns.some(v => v.exploitAvailable) && (
+                          <span className="flex items-center gap-1 text-[9px] font-bold px-1.5 py-0.5 bg-[#ff3b3b]/10 border border-[#ff3b3b]/25 text-[#ff3b3b] rounded">
+                            <Zap size={8} /> اکسپلویت
+                          </span>
+                        )}
                       </div>
                       <div className="flex flex-wrap gap-2 text-[11px] text-muted-foreground font-mono" dir="ltr">
                         {h.hostnames.map(n => <span key={n}>{n}</span>)}
                       </div>
                     </div>
                     <div className="text-end text-[11px] text-muted-foreground flex-shrink-0">
-                      <p dir="ltr" className="font-mono">{h.countryCode} · {h.city}</p>
+                      <p dir="ltr" className="font-mono">{subnetLabel(h.ip)}</p>
                       <p>{timeAgo(h.lastScan)}</p>
                     </div>
                   </div>
@@ -322,7 +262,7 @@ function SearchResults({
                   <div className="flex flex-wrap items-center gap-x-4 gap-y-0.5 mb-3 text-[11px] text-muted-foreground">
                     <span className="flex items-center gap-1"><Building size={10} /><span dir="ltr">{h.org}</span></span>
                     <span className="flex items-center gap-1"><Cpu size={10} /><span dir="ltr">{h.os}</span></span>
-                    <span className="flex items-center gap-1"><Activity size={10} /><span dir="ltr">{h.asn}</span></span>
+                    <span className="flex items-center gap-1"><Activity size={10} />{faNum(h.vulns.length)} یافته</span>
                   </div>
 
                   <div className="flex flex-wrap gap-1.5 mb-3">
@@ -359,10 +299,14 @@ function SearchResults({
 // ── Host detail page (Shodan-style) ────────────────────────────────────────
 function HostPage({ host, onBack, onSearch }: { host: HostRecord; onBack: () => void; onSearch: (q: string) => void }) {
   const [openPort, setOpenPort] = useState<number | null>(null);
-  const [vulnFilter, setVulnFilter] = useState<Sev | "All">("All");
+  const [vulnFilter, setVulnFilter] = useState<Sev | "All" | "Exploit">("All");
   const [q, setQ] = useState(host.ip);
 
-  const filteredVulns = vulnFilter === "All" ? host.vulns : host.vulns.filter(v => v.severity === vulnFilter);
+  const filteredVulns =
+    vulnFilter === "All" ? host.vulns
+    : vulnFilter === "Exploit" ? host.vulns.filter(v => v.exploitAvailable)
+    : host.vulns.filter(v => v.severity === vulnFilter);
+  const exploitCount = host.vulns.filter(v => v.exploitAvailable).length;
   const sevCounts = (["Critical", "High", "Medium", "Low", "Info"] as Sev[]).map(s => ({ s, count: host.vulns.filter(v => v.severity === s).length }));
 
   return (
@@ -392,11 +336,10 @@ function HostPage({ host, onBack, onSearch }: { host: HostRecord; onBack: () => 
               { label: "نشانی IP", value: host.ip, cls: "text-primary font-mono", ltr: true },
               { label: "نام میزبان‌ها", value: host.hostnames.join("\n"), cls: "text-foreground font-mono text-[11px]", ltr: true },
               { label: "دامنه‌ها", value: host.domains.join(", "), cls: "text-foreground font-mono text-[11px]", ltr: true },
-              { label: "کشور", value: `${host.countryCode} – ${host.country}`, cls: "text-foreground", ltr: true },
-              { label: "شهر", value: `${host.city}, ${host.region}`, cls: "text-foreground", ltr: true },
+              // Nessus carries no location data, so the panel shows what the scan
+              // really knows: which subnet the host sits in.
+              { label: "زیرشبکه", value: subnetLabel(host.ip), cls: "text-foreground font-mono", ltr: true },
               { label: "سازمان", value: host.org, cls: "text-foreground", ltr: true },
-              { label: "ارائه‌دهندهٔ اینترنت", value: host.isp, cls: "text-foreground", ltr: true },
-              { label: "ASN", value: host.asn, cls: "text-foreground font-mono", ltr: true },
               { label: "سیستم‌عامل", value: host.os, cls: "text-foreground", ltr: true },
               { label: "آخرین اسکن", value: timeAgo(host.lastScan), cls: "text-foreground", ltr: false },
             ].map(({ label, value, cls, ltr }) => (
@@ -521,6 +464,18 @@ function HostPage({ host, onBack, onSearch }: { host: HostRecord; onBack: () => 
                     {s === "All" ? "همه" : SEV_FA[s as Sev]}
                   </button>
                 ))}
+                {exploitCount > 0 && (
+                  <button
+                    onClick={() => setVulnFilter("Exploit")}
+                    className={`flex items-center gap-1 text-[10px] px-2 py-0.5 rounded border transition-colors
+                      ${vulnFilter === "Exploit"
+                        ? "bg-[#ff3b3b]/10 border-[#ff3b3b]/30 text-[#ff3b3b]"
+                        : "border-border text-muted-foreground hover:text-foreground hover:bg-secondary"
+                      }`}
+                  >
+                    <Zap size={9} /> اکسپلویت‌پذیر {faNum(exploitCount)}
+                  </button>
+                )}
               </div>
             </div>
 
@@ -541,6 +496,7 @@ function HostPage({ host, onBack, onSearch }: { host: HostRecord; onBack: () => 
                         <span dir="ltr" className={`text-[11px] font-mono font-bold ${v.cvss >= 9 ? "text-[#ff3b3b]" : v.cvss >= 7 ? "text-[#ff8c00]" : v.cvss >= 4 ? "text-[#f5c518]" : "text-[#3b82f6]"}`}>
                           CVSS {v.cvss.toFixed(1)}
                         </span>
+                        <ExploitBadges vuln={v} />
                       </div>
 
                       <p className="text-[12px] text-muted-foreground leading-relaxed mb-2.5" dir="ltr" style={{ textAlign: "start" }}>{v.description}</p>
@@ -573,7 +529,7 @@ function HostPage({ host, onBack, onSearch }: { host: HostRecord; onBack: () => 
       </div>
 
       <footer className="border-t border-border py-4 px-4 text-center text-[11px] text-muted-foreground">
-        افرانت ® افراشودَن · <span dir="ltr">soc@afranet.io</span>
+        افرانت ® افراکاو · <span dir="ltr">soc@afranet.io</span>
       </footer>
     </div>
   );
@@ -617,10 +573,6 @@ function CustomerApp() {
       if (lower.startsWith("tag:")) {
         return h.tags.includes(lower.split(":")[1]);
       }
-      if (lower.startsWith("country:")) {
-        const c = lower.split(":")[1];
-        return h.countryCode.toLowerCase() === c || h.country.toLowerCase().includes(c);
-      }
       if (lower.startsWith("vuln:") || lower.startsWith("cve:")) {
         const cve = lower.split(":")[1].toUpperCase();
         return h.vulns.some(v => v.cve.toUpperCase().includes(cve));
@@ -629,15 +581,32 @@ function CustomerApp() {
         const prod = lower.split(":")[1];
         return h.ports.some(p => p.product.toLowerCase().includes(prod));
       }
+      if (lower.startsWith("os:")) {
+        return h.os.toLowerCase().includes(lower.slice(3));
+      }
+      // subnet:10.20.30 matches 10.20.30.* and nothing wider.
+      if (lower.startsWith("subnet:") || lower.startsWith("net:")) {
+        const prefix = lower.split(":")[1].replace(/\.$/, "");
+        return h.ip.startsWith(prefix + ".");
+      }
+      if (lower.startsWith("has:") || lower.startsWith("exploit:")) {
+        const [key, val] = lower.split(":");
+        if (key === "exploit") {
+          const want = val === "true" || val === "yes" || val === "1";
+          return h.vulns.some(v => v.exploitAvailable) === want;
+        }
+        if (val === "exploit") return h.vulns.some(v => v.exploitAvailable);
+        if (val === "malware") return h.vulns.some(v => v.exploitedByMalware);
+        if (val === "critical") return h.vulns.some(v => v.severity === "Critical");
+        return false;
+      }
+      if (lower === "*") return true;
       return (
         h.ip.includes(lower) ||
         h.hostnames.some(n => n.toLowerCase().includes(lower)) ||
         h.domains.some(d => d.includes(lower)) ||
         h.os.toLowerCase().includes(lower) ||
         h.org.toLowerCase().includes(lower) ||
-        h.country.toLowerCase().includes(lower) ||
-        h.countryCode.toLowerCase() === lower ||
-        h.city.toLowerCase().includes(lower) ||
         h.tags.some(t => t.includes(lower)) ||
         h.ports.some(p => String(p.port) === lower || p.service.includes(lower) || p.product.toLowerCase().includes(lower)) ||
         h.vulns.some(v => v.cve.toLowerCase().includes(lower) || v.name.toLowerCase().includes(lower))
