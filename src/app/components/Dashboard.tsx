@@ -9,7 +9,7 @@ const SEV_FA: Record<Severity, string> = {
   Critical: "بحرانی", High: "بالا", Medium: "متوسط", Low: "پایین", Info: "اطلاعاتی",
 };
 const SEV_COLOR: Record<Severity, string> = {
-  Critical: "#ff3b3b", High: "#ff8c00", Medium: "#f5c518", Low: "#3b82f6", Info: "#6b7280",
+  Critical: "#ff3b3b", High: "#ff8c00", Medium: "#f5c518", Low: "#2ea043", Info: "#6b7280",
 };
 const SEV_ORDER: Severity[] = ["Critical", "High", "Medium", "Low", "Info"];
 

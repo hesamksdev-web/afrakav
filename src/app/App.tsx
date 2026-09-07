@@ -32,7 +32,7 @@ const SEV: Record<Sev, { color: string; bg: string; border: string; hex: string 
   Critical: { color: "text-[#ff3b3b]", bg: "bg-[#ff3b3b]/10", border: "border-[#ff3b3b]/30", hex: "#ff3b3b" },
   High:     { color: "text-[#ff8c00]", bg: "bg-[#ff8c00]/10", border: "border-[#ff8c00]/30", hex: "#ff8c00" },
   Medium:   { color: "text-[#f5c518]", bg: "bg-[#f5c518]/10", border: "border-[#f5c518]/30", hex: "#f5c518" },
-  Low:      { color: "text-[#3b82f6]", bg: "bg-[#3b82f6]/10", border: "border-[#3b82f6]/30", hex: "#3b82f6" },
+  Low:      { color: "text-[#2ea043]", bg: "bg-[#2ea043]/10", border: "border-[#2ea043]/30", hex: "#2ea043" },
   Info:     { color: "text-[#8b949e]", bg: "bg-[#8b949e]/10", border: "border-[#8b949e]/30", hex: "#8b949e" },
 };
 
@@ -509,7 +509,7 @@ function HostPage({ host, onBack, backLabel, onHome, onSearch }: {
                         )}
                         <span className="text-[12px] text-muted-foreground">پلاگین <span className="font-mono" dir="ltr">#{v.pluginId}</span></span>
                         <span className="text-[12px] font-mono text-muted-foreground" dir="ltr">{v.family}</span>
-                        <span dir="ltr" className={`text-[12px] font-mono font-bold ${v.cvss >= 9 ? "text-[#ff3b3b]" : v.cvss >= 7 ? "text-[#ff8c00]" : v.cvss >= 4 ? "text-[#f5c518]" : "text-[#3b82f6]"}`}>
+                        <span dir="ltr" className={`text-[12px] font-mono font-bold ${v.cvss >= 9 ? "text-[#ff3b3b]" : v.cvss >= 7 ? "text-[#ff8c00]" : v.cvss >= 4 ? "text-[#f5c518]" : "text-[#2ea043]"}`}>
                           CVSS {v.cvss.toFixed(1)}
                         </span>
                         <ExploitBadges vuln={v} />
@@ -517,7 +517,7 @@ function HostPage({ host, onBack, backLabel, onHome, onSearch }: {
 
                       <p className="text-[13px] text-muted-foreground leading-relaxed mb-2.5" dir="ltr" style={{ textAlign: "start" }}>{v.description}</p>
 
-                      <div className="flex items-start gap-2 p-2.5 rounded bg-[#00e5a0]/5 border border-[#00e5a0]/15">
+                      <div className="flex items-start gap-2 p-2.5 rounded bg-primary/5 border border-primary/15">
                         <CheckCircle size={11} className="text-primary mt-0.5 flex-shrink-0" />
                         <div>
                           <p className="text-[10px] text-primary mb-0.5">راهکار</p>
