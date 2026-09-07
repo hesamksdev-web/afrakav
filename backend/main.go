@@ -7,6 +7,7 @@
 //	POST /api/login                 {username,password} -> {token,user}
 //	                                or, with 2FA on, {mfaRequired,challenge}
 //	POST /api/login/mfa             {challenge,code} -> {token,user}
+//	POST /api/access-request        ask for an account; creates nothing
 //	GET  /api/health                liveness
 //
 // Authenticated (Bearer token):
@@ -30,15 +31,20 @@
 //	POST /api/admin/customers/{id}/password   reset a customer's password
 //	POST /api/admin/customers/{id}/status     suspend or restore an account
 //	POST /api/admin/customers/{id}/2fa/reset  clear a locked-out second factor
+//	GET  /api/admin/access-requests           pending sign-up requests
+//	POST /api/admin/access-requests/{id}/approve  create the customer
+//	POST /api/admin/access-requests/{id}/reject   decline it
 package main
 
 import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
 	"log"
 	"net"
 	"net/http"
+	"net/mail"
 	"os"
 	"strconv"
 	"strings"
@@ -61,6 +67,14 @@ const (
 
 	// The name an authenticator app shows beside the account.
 	totpIssuer = "Afrakav"
+
+	// Caps on the public access-request form. It is the one endpoint an
+	// unauthenticated stranger can write through, so everything it accepts is
+	// bounded and it is capped per address on top of the nginx rate limit.
+	maxRequestField    = 200
+	maxRequestNote     = 1000
+	maxRequestsPerIP   = 5
+	requestsPerIPSince = 24 * time.Hour
 )
 
 // dummyHash is compared against when a login names an account that does not
@@ -110,6 +124,7 @@ func main() {
 	mux.HandleFunc("GET /api/health", srv.handleHealth)
 	mux.HandleFunc("POST /api/login", srv.handleLogin)
 	mux.HandleFunc("POST /api/login/mfa", srv.handleLoginMFA)
+	mux.HandleFunc("POST /api/access-request", srv.handleAccessRequest)
 
 	mux.Handle("GET /api/me", srv.authed(srv.handleMe))
 	mux.Handle("GET /api/hosts", srv.authed(srv.handleHosts))
@@ -128,6 +143,9 @@ func main() {
 	mux.Handle("POST /api/admin/customers/{id}/password", srv.adminOnly(srv.handleResetPassword))
 	mux.Handle("POST /api/admin/customers/{id}/status", srv.adminOnly(srv.handleSetStatus))
 	mux.Handle("POST /api/admin/customers/{id}/2fa/reset", srv.adminOnly(srv.handleResetTOTP))
+	mux.Handle("GET /api/admin/access-requests", srv.adminOnly(srv.handleListAccessRequests))
+	mux.Handle("POST /api/admin/access-requests/{id}/approve", srv.adminOnly(srv.handleApproveRequest))
+	mux.Handle("POST /api/admin/access-requests/{id}/reject", srv.adminOnly(srv.handleRejectRequest))
 
 	log.Printf("Afrashodan backend listening on %s", addr)
 	httpSrv := &http.Server{
@@ -331,6 +349,196 @@ func (s *server) checkSecondFactor(r *http.Request, u db.User, code string) bool
 	return used
 }
 
+// ── access requests (public form + admin review) ────────────────────────────
+
+// handleAccessRequest records a request for an account from the login page.
+// It creates nothing and reveals nothing: the response is the same whether or
+// not the company is already a customer.
+func (s *server) handleAccessRequest(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		CompanyName    string `json:"companyName"`
+		ContactName    string `json:"contactName"`
+		Email          string `json:"email"`
+		Phone          string `json:"phone"`
+		WantedUsername string `json:"wantedUsername"`
+		Note           string `json:"note"`
+	}
+	if err := json.NewDecoder(io.LimitReader(r.Body, 8<<10)).Decode(&body); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+
+	req := db.AccessRequest{
+		CompanyName:    strings.TrimSpace(body.CompanyName),
+		ContactName:    strings.TrimSpace(body.ContactName),
+		Email:          strings.TrimSpace(body.Email),
+		Phone:          strings.TrimSpace(body.Phone),
+		WantedUsername: strings.ToLower(strings.TrimSpace(body.WantedUsername)),
+		Note:           strings.TrimSpace(body.Note),
+		SourceIP:       clientIP(r),
+	}
+	if err := validateAccessRequest(&req); err != nil {
+		writeError(w, http.StatusUnprocessableEntity, err.Error())
+		return
+	}
+
+	// Second line of defence behind the nginx rate limit: a shared office
+	// address should not be able to bury the admin panel.
+	since := time.Now().Add(-requestsPerIPSince)
+	if n, err := s.db.CountPendingRequestsSince(r.Context(), req.SourceIP, since); err == nil && n >= maxRequestsPerIP {
+		log.Printf("audit: access request throttled ip=%s existing=%d", req.SourceIP, n)
+		writeError(w, http.StatusTooManyRequests, "too many requests from this address; please try again later")
+		return
+	}
+
+	saved, err := s.db.CreateAccessRequest(r.Context(), req)
+	if err != nil {
+		log.Printf("access request: %v", err)
+		writeError(w, http.StatusInternalServerError, "could not submit the request")
+		return
+	}
+	log.Printf("audit: access request received id=%d company=%q email=%q ip=%s",
+		saved.ID, saved.CompanyName, saved.Email, req.SourceIP)
+	writeJSON(w, http.StatusCreated, map[string]any{"status": "received"})
+}
+
+// validateAccessRequest bounds every field before it reaches the database.
+func validateAccessRequest(a *db.AccessRequest) error {
+	type field struct {
+		value string
+		min   int
+		max   int
+		msg   string
+	}
+	for _, f := range []field{
+		{a.CompanyName, 2, maxRequestField, "please give the organisation name"},
+		{a.ContactName, 2, maxRequestField, "please give a contact name"},
+		{a.Phone, 5, 40, "please give a valid phone number"},
+	} {
+		if n := len([]rune(f.value)); n < f.min || n > f.max {
+			return errors.New(f.msg)
+		}
+	}
+	if len([]rune(a.Email)) > maxRequestField {
+		return errors.New("please give a valid email address")
+	}
+	if _, err := mail.ParseAddress(a.Email); err != nil {
+		return errors.New("please give a valid email address")
+	}
+	if a.WantedUsername != "" && !validUsername(a.WantedUsername) {
+		return errors.New("the preferred username may use only letters, digits, dot, dash and underscore")
+	}
+	if len([]rune(a.Note)) > maxRequestNote {
+		return errors.New("the note is too long")
+	}
+	return nil
+}
+
+// validUsername keeps usernames to a predictable shape, for both the request
+// form and account creation.
+func validUsername(u string) bool {
+	if n := len([]rune(u)); n < minUsernameLen || n > 40 {
+		return false
+	}
+	for _, r := range u {
+		switch {
+		case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r >= '0' && r <= '9':
+		case r == '.', r == '-', r == '_':
+		default:
+			return false
+		}
+	}
+	return true
+}
+
+func (s *server) handleListAccessRequests(w http.ResponseWriter, r *http.Request) {
+	status := r.URL.Query().Get("status")
+	switch status {
+	case "", db.RequestPending, db.RequestApproved, db.RequestRejected:
+	default:
+		writeError(w, http.StatusBadRequest, "unknown status filter")
+		return
+	}
+	list, err := s.db.ListAccessRequests(r.Context(), status)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "could not load the requests")
+		return
+	}
+	writeJSON(w, http.StatusOK, list)
+}
+
+// handleApproveRequest creates the customer account the request asked for. The
+// admin chooses the final username and password — nothing the visitor typed is
+// used as a credential.
+func (s *server) handleApproveRequest(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request id")
+		return
+	}
+	var body struct {
+		Username    string `json:"username"`
+		Password    string `json:"password"`
+		DisplayName string `json:"displayName"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	body.Username = strings.ToLower(strings.TrimSpace(body.Username))
+	if !validUsername(body.Username) {
+		writeError(w, http.StatusUnprocessableEntity, "username must be at least 3 characters")
+		return
+	}
+	if err := validatePassword(body.Password); err != nil {
+		writeError(w, http.StatusUnprocessableEntity, err.Error())
+		return
+	}
+	hash, err := auth.HashPassword(body.Password)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "hash failed")
+		return
+	}
+
+	admin := claimsFrom(r).Username
+	u, err := s.db.ApproveAccessRequest(r.Context(), id, admin, body.Username, hash, strings.TrimSpace(body.DisplayName))
+	if errors.Is(err, db.ErrNotFound) {
+		writeError(w, http.StatusConflict, "this request has already been handled")
+		return
+	}
+	if err != nil {
+		if strings.Contains(err.Error(), "duplicate") || strings.Contains(err.Error(), "unique") {
+			writeError(w, http.StatusConflict, "this username is already taken")
+			return
+		}
+		log.Printf("approve access request %d: %v", id, err)
+		writeError(w, http.StatusInternalServerError, "could not create the customer")
+		return
+	}
+	log.Printf("audit: access request approved id=%d customer=%q customerId=%d by=%q ip=%s",
+		id, u.Username, u.ID, admin, clientIP(r))
+	writeJSON(w, http.StatusCreated, publicUser(u))
+}
+
+func (s *server) handleRejectRequest(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request id")
+		return
+	}
+	admin := claimsFrom(r).Username
+	if err := s.db.RejectAccessRequest(r.Context(), id, admin); err != nil {
+		if errors.Is(err, db.ErrNotFound) {
+			writeError(w, http.StatusConflict, "this request has already been handled")
+			return
+		}
+		writeError(w, http.StatusInternalServerError, "could not update the request")
+		return
+	}
+	log.Printf("audit: access request rejected id=%d by=%q ip=%s", id, admin, clientIP(r))
+	writeJSON(w, http.StatusOK, map[string]any{"status": "ok"})
+}
+
 // ── authenticated handlers ──────────────────────────────────────────────────
 
 func (s *server) handleMe(w http.ResponseWriter, r *http.Request) {
@@ -443,8 +651,8 @@ func (s *server) handleCreateCustomer(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid request body")
 		return
 	}
-	body.Username = strings.TrimSpace(body.Username)
-	if len([]rune(body.Username)) < minUsernameLen {
+	body.Username = strings.ToLower(strings.TrimSpace(body.Username))
+	if !validUsername(body.Username) {
 		writeError(w, http.StatusUnprocessableEntity, "username must be at least 3 characters")
 		return
 	}

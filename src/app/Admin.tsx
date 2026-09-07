@@ -11,6 +11,7 @@ import {
 } from "./api";
 import ThemeToggle from "./components/ThemeToggle";
 import Settings from "./Settings";
+import AccessRequests from "./components/AccessRequests";
 
 const faNum = (n: number) => n.toLocaleString("fa-IR");
 
@@ -49,6 +50,12 @@ export default function Admin() {
           </div>
         </div>
       </nav>
+
+      <div className="max-w-6xl mx-auto w-full px-4 pt-6">
+        {/* Sign-up requests from the public login page, above the manual tools:
+            an unread request is the thing most likely to need attention. */}
+        <AccessRequests onApproved={refresh} />
+      </div>
 
       <div className="max-w-6xl mx-auto w-full px-4 py-6 grid md:grid-cols-[1fr_1.4fr] gap-6">
         {/* ── Actions column ── */}

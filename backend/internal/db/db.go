@@ -95,6 +95,28 @@ ALTER TABLE users ADD COLUMN IF NOT EXISTS totp_last_step BIGINT  NOT NULL DEFAU
 
 -- One-time recovery codes, stored as SHA-256 hashes. A used code is deleted
 -- rather than flagged, so a row's presence is the whole state.
+-- Access requests come from the public login page, so every row is untrusted
+-- input from an unauthenticated visitor. Nothing here grants access on its own:
+-- an admin reads the request and creates the account separately.
+CREATE TABLE IF NOT EXISTS access_requests (
+    id              BIGSERIAL PRIMARY KEY,
+    company_name    TEXT NOT NULL,
+    contact_name    TEXT NOT NULL,
+    email           TEXT NOT NULL,
+    phone           TEXT NOT NULL,
+    wanted_username TEXT NOT NULL DEFAULT '',
+    note            TEXT NOT NULL DEFAULT '',
+    status          TEXT NOT NULL DEFAULT 'pending'
+                    CHECK (status IN ('pending','approved','rejected')),
+    source_ip       TEXT NOT NULL DEFAULT '',
+    created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
+    reviewed_at     TIMESTAMPTZ,
+    reviewed_by     TEXT NOT NULL DEFAULT '',
+    created_user_id BIGINT REFERENCES users(id) ON DELETE SET NULL
+);
+CREATE INDEX IF NOT EXISTS access_requests_status_idx
+    ON access_requests (status, created_at DESC);
+
 CREATE TABLE IF NOT EXISTS recovery_codes (
     user_id    BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     code_hash  TEXT   NOT NULL,

@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Shield, Lock, User as UserIcon, Loader2, ShieldCheck, ArrowRight } from "lucide-react";
 import { useAuth } from "./auth";
 import ThemeToggle from "./components/ThemeToggle";
+import AccessRequest from "./AccessRequest";
 
 export default function Login() {
   const { login, verifyCode } = useAuth();
@@ -13,6 +14,7 @@ export default function Login() {
   // It is not a session token — it only carries this attempt to the next step.
   const [challenge, setChallenge] = useState<string | null>(null);
   const [code, setCode] = useState("");
+  const [requesting, setRequesting] = useState(false);
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -61,7 +63,9 @@ export default function Login() {
           سامانهٔ هوش سطح حمله — ورود مشتریان و مدیران
         </p>
 
-        {challenge ? (
+        {requesting ? (
+          <AccessRequest onBack={() => setRequesting(false)} />
+        ) : challenge ? (
           <form onSubmit={submitCode} className="bg-card border border-border rounded p-6 space-y-4">
             <div className="flex items-center gap-2">
               <ShieldCheck size={15} className="text-primary" />
@@ -142,9 +146,15 @@ export default function Login() {
         </form>
         )}
 
-        <p className="text-center text-[11px] text-muted-foreground mt-6">
-          حساب کاربری شما توسط مدیر افرانت برایتان ایجاد می‌شود.
-        </p>
+        {!requesting && !challenge && (
+          <p className="text-center text-[11px] text-muted-foreground mt-6">
+            هنوز حساب کاربری ندارید؟{" "}
+            <button onClick={() => { setRequesting(true); setError(""); }}
+              className="text-primary hover:underline">
+              درخواست دسترسی
+            </button>
+          </p>
+        )}
       </div>
     </div>
   );

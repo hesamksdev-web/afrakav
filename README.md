@@ -71,6 +71,21 @@ pnpm install
 VITE_API_URL=http://localhost:8080 pnpm dev   # Vite dev server on :5173
 ```
 
+## Access requests
+
+The login page carries a public **درخواست دسترسی** form. A visitor submits their
+organisation, contact details and an optional preferred username; the request is
+stored and nothing else happens. An admin reviews it in the panel and, on
+approval, picks the username and password themselves — nothing typed into the
+public form ever becomes a credential. Approval creates the account and marks
+the request in one transaction, so two admins acting at once cannot produce two
+accounts from one request.
+
+The form is the only endpoint an unauthenticated stranger can write through, so
+it is bounded on three sides: nginx rate-limits it to three a minute per
+address, the backend caps five per address per day, and every field has a length
+limit with the email parsed rather than pattern-matched.
+
 ## Two-factor authentication
 
 Any account can turn on TOTP two-factor from **تنظیمات** (Settings). Enrolment
@@ -99,6 +114,7 @@ Public:
 |--------|-----------------|----------------------------------------------|
 | POST   | `/api/login`    | `{username,password}` → `{token, user}`, or `{mfaRequired, challenge}` |
 | POST   | `/api/login/mfa`| `{challenge, code}` → `{token, user}`        |
+| POST   | `/api/access-request` | ask for an account; creates nothing   |
 | GET    | `/api/health`   | liveness probe                               |
 
 Authenticated (`Authorization: Bearer <token>`):
@@ -126,6 +142,9 @@ Admin only:
 | POST   | `/api/admin/customers/{id}/password` | `{password}` — also ends that customer's sessions |
 | POST   | `/api/admin/customers/{id}/status`   | `{disabled}` — suspend or restore an account      |
 | POST   | `/api/admin/customers/{id}/2fa/reset`| clear a second factor the customer is locked out of |
+| GET    | `/api/admin/access-requests`         | `?status=pending|approved|rejected`, newest first |
+| POST   | `/api/admin/access-requests/{id}/approve` | `{username,password,displayName}` → creates the customer |
+| POST   | `/api/admin/access-requests/{id}/reject`  | decline a pending request        |
 
 **Search grammar:** `port:445`, `tag:rdp`, `vuln:CVE-2021-44228`, `cve:…`,
 `product:jenkins`, `os:windows`, `subnet:10.20.30` (a /24, `net:` also works),

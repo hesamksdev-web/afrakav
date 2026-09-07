@@ -114,6 +114,22 @@ const ERROR_FA: Record<string, string> = {
   "could not parse the Nessus file": "پردازش فایل Nessus ممکن نبود؛ لطفاً از معتبر بودن فایل مطمئن شوید",
   "hash failed": "خطای داخلی سرور؛ لطفاً دوباره تلاش کنید",
   "this username is already taken": "این نام کاربری قبلاً استفاده شده است",
+  "please give the organisation name": "نام سازمان را وارد کنید",
+  "please give a contact name": "نام و نام خانوادگی رابط را وارد کنید",
+  "please give a valid email address": "نشانی ایمیل معتبر وارد کنید",
+  "please give a valid phone number": "شمارهٔ تماس معتبر وارد کنید",
+  "the preferred username may use only letters, digits, dot, dash and underscore":
+    "نام کاربری پیشنهادی فقط می‌تواند شامل حروف انگلیسی، رقم، نقطه، خط تیره و زیرخط باشد",
+  "the note is too long": "توضیحات بیش از حد طولانی است",
+  "too many requests from this address; please try again later":
+    "درخواست‌های بیش از حد از این نشانی ثبت شده است؛ لطفاً بعداً تلاش کنید",
+  "could not submit the request": "ثبت درخواست با خطا مواجه شد",
+  "could not load the requests": "بارگیری درخواست‌ها با خطا مواجه شد",
+  "this request has already been handled": "این درخواست قبلاً بررسی شده است",
+  "could not update the request": "به‌روزرسانی درخواست با خطا مواجه شد",
+  "could not create the customer": "ایجاد مشتری با خطا مواجه شد",
+  "invalid request id": "شناسهٔ درخواست نامعتبر است",
+  "unknown status filter": "فیلتر وضعیت نامعتبر است",
   "could not create customer": "ایجاد مشتری با خطا مواجه شد",
   "file too large or malformed form (max 64 MiB)": "فایل بیش از حد بزرگ یا نامعتبر است (حداکثر ۶۴ مگابایت)",
   "missing or invalid customerId": "مشتری انتخاب‌شده نامعتبر است",
@@ -209,6 +225,53 @@ export interface Me {
 
 export async function me(): Promise<Me> {
   return request<Me>("/api/me");
+}
+
+// ── access requests ───────────────────────────────────────────────────────
+
+export interface AccessRequestForm {
+  companyName: string;
+  contactName: string;
+  email: string;
+  phone: string;
+  wantedUsername?: string;
+  note?: string;
+}
+
+export interface AccessRequest extends AccessRequestForm {
+  id: number;
+  wantedUsername: string;
+  note: string;
+  status: "pending" | "approved" | "rejected";
+  sourceIp: string;
+  createdAt: string;
+  reviewedAt: string | null;
+  reviewedBy: string;
+  createdUserId: number | null;
+}
+
+// Public: submitting a request creates no account and grants nothing.
+export function submitAccessRequest(form: AccessRequestForm): Promise<{ status: string }> {
+  return request("/api/access-request", { method: "POST", body: JSON.stringify(form) });
+}
+
+export function listAccessRequests(status?: AccessRequest["status"]): Promise<AccessRequest[]> {
+  return request<AccessRequest[]>(`/api/admin/access-requests${status ? `?status=${status}` : ""}`);
+}
+
+// Approving creates the customer. The admin picks the credentials — nothing the
+// visitor typed into the public form is used as one.
+export function approveAccessRequest(
+  id: number, username: string, password: string, displayName: string,
+): Promise<User> {
+  return request<User>(`/api/admin/access-requests/${id}/approve`, {
+    method: "POST",
+    body: JSON.stringify({ username, password, displayName }),
+  });
+}
+
+export function rejectAccessRequest(id: number): Promise<{ status: string }> {
+  return request(`/api/admin/access-requests/${id}/reject`, { method: "POST" });
 }
 
 // ── two-factor authentication ─────────────────────────────────────────────
