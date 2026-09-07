@@ -34,7 +34,7 @@ export default function AccessRequest({ onBack }: { onBack: () => void }) {
         <CheckCircle size={28} className="text-primary mx-auto" />
         <div className="space-y-1.5">
           <p className="text-sm font-semibold text-foreground">درخواست شما ثبت شد</p>
-          <p className="text-[11px] text-muted-foreground leading-relaxed">
+          <p className="text-[12px] text-muted-foreground leading-relaxed">
             کارشناسان افرانت درخواست را بررسی می‌کنند و در صورت تأیید، اطلاعات ورود
             از طریق همان ایمیل یا شمارهٔ تماسی که وارد کردید برایتان ارسال می‌شود.
           </p>
@@ -51,7 +51,7 @@ export default function AccessRequest({ onBack }: { onBack: () => void }) {
     <form onSubmit={submit} className="bg-card border border-border rounded p-6 space-y-3">
       <div className="space-y-1">
         <p className="text-sm font-semibold text-foreground">درخواست دسترسی</p>
-        <p className="text-[11px] text-muted-foreground leading-relaxed">
+        <p className="text-[12px] text-muted-foreground leading-relaxed">
           مشخصات سازمان خود را وارد کنید. پس از بررسی و تأیید، حساب کاربری برایتان
           ایجاد و اطلاعات ورود ارسال می‌شود.
         </p>
@@ -69,7 +69,7 @@ export default function AccessRequest({ onBack }: { onBack: () => void }) {
              placeholder="acme-corp" ltr />
 
       <div>
-        <label className="text-[11px] text-muted-foreground">توضیحات (اختیاری)</label>
+        <label className="text-[12px] text-muted-foreground">توضیحات (اختیاری)</label>
         <textarea
           value={form.note} onChange={e => setForm(f => ({ ...f, note: e.target.value.slice(0, 1000) }))}
           rows={3} placeholder="مثلاً تعداد و محدودهٔ آی‌پی‌هایی که می‌خواهید پایش شوند"
@@ -92,7 +92,7 @@ export default function AccessRequest({ onBack }: { onBack: () => void }) {
       </button>
 
       <button type="button" onClick={onBack}
-        className="w-full flex items-center justify-center gap-1.5 text-[11px] text-muted-foreground hover:text-foreground transition-colors">
+        className="w-full flex items-center justify-center gap-1.5 text-[12px] text-muted-foreground hover:text-foreground transition-colors">
         <ArrowRight size={11} /> بازگشت به صفحهٔ ورود
       </button>
     </form>
@@ -105,7 +105,7 @@ function Field({ label, value, onChange, placeholder, type = "text", ltr = false
 }) {
   return (
     <div>
-      <label className="text-[11px] text-muted-foreground">
+      <label className="text-[12px] text-muted-foreground">
         {label}{required && <span className="text-[#ff3b3b]"> *</span>}
       </label>
       <input

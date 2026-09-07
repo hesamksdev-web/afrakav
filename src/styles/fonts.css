@@ -1,2 +1,28 @@
-@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;600;700&family=Inter:wght@300;400;500;600;700&display=swap');
-@import url('https://fonts.googleapis.com/css2?family=Vazirmatn:wght@300;400;500;600;700&display=swap');
+/* Dana Pro, self-hosted.
+ *
+ * The stylesheet used to @import Vazirmatn and JetBrains Mono from Google, but
+ * the Content-Security-Policy allows styles and fonts only from 'self', so
+ * neither ever loaded in production — the app has been rendering in whatever
+ * the visitor's system offered. Bundling the font fixes that as well as
+ * switching the typeface.
+ *
+ * One variable file covers every weight the interface uses (Dana maps its wght
+ * axis 1:1 onto CSS weights: 400 Regular, 500 Medium, 600 DemiBold, 700 Bold),
+ * which is smaller than shipping four static cuts.
+ *
+ * Dana is proprietary — see FontLicense.txt beside this file, which the licence
+ * requires to travel with the font.
+ */
+@font-face {
+  font-family: 'Dana';
+  /* Plain woff2: a variable font is declared by the weight range below, and
+     the older 'woff2-variations' format string is ignored by Chrome and
+     Firefox, which would leave the font silently unloaded. */
+  src: url('../assets/fonts/DanaVF.woff2') format('woff2');
+  font-weight: 100 900;
+  font-style: normal;
+  font-display: swap;
+  /* Dana's x-height is 50% of the em, a little short for interface text at the
+     sizes used here. This lifts the drawn glyphs without moving the layout. */
+  size-adjust: 105%;
+}

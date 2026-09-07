@@ -41,7 +41,7 @@ export default function AccessRequests({ onApproved }: { onApproved: () => void 
         <Inbox size={13} className="text-primary" />
         <span className="text-xs font-semibold text-foreground">درخواست‌های دسترسی</span>
         {filter === "pending" && pendingCount > 0 && (
-          <span className="text-[10px] text-[#ff8c00] border border-[#ff8c00]/30 bg-[#ff8c00]/5 rounded px-1.5 py-0.5">
+          <span className="text-[11px] text-[#ff8c00] border border-[#ff8c00]/30 bg-[#ff8c00]/5 rounded px-1.5 py-0.5">
             {faNum(pendingCount)} در انتظار
           </span>
         )}
@@ -51,7 +51,7 @@ export default function AccessRequests({ onApproved }: { onApproved: () => void 
             ["rejected", "رد شده"], ["all", "همه"],
           ] as const).map(([value, label]) => (
             <button key={value} onClick={() => setFilter(value)}
-              className={`text-[10px] px-2 py-0.5 rounded border transition-colors ${
+              className={`text-[11px] px-2 py-0.5 rounded border transition-colors ${
                 filter === value
                   ? "bg-primary/10 border-primary/30 text-primary"
                   : "border-border text-muted-foreground hover:text-foreground hover:bg-secondary"
@@ -65,9 +65,9 @@ export default function AccessRequests({ onApproved }: { onApproved: () => void 
       {loading ? (
         <div className="py-10 flex justify-center text-muted-foreground"><Loader2 size={18} className="animate-spin" /></div>
       ) : error ? (
-        <p className="px-4 py-6 text-center text-[11px] text-[#ff3b3b]">{error}</p>
+        <p className="px-4 py-6 text-center text-[12px] text-[#ff3b3b]">{error}</p>
       ) : items.length === 0 ? (
-        <p className="px-4 py-8 text-center text-[11px] text-muted-foreground">
+        <p className="px-4 py-8 text-center text-[12px] text-muted-foreground">
           {filter === "pending" ? "درخواست بررسی‌نشده‌ای وجود ندارد." : "موردی یافت نشد."}
         </p>
       ) : (
@@ -120,14 +120,14 @@ function RequestRow({ item, onChanged }: { item: AccessRequest; onChanged: () =>
       <button onClick={() => setOpen(o => !o)} className="w-full flex items-center gap-2 text-start">
         <span className="text-xs text-foreground truncate">{item.companyName}</span>
         <StatusChip status={item.status} />
-        <span className="ms-auto text-[10px] text-muted-foreground flex-shrink-0">{faDate(item.createdAt)}</span>
+        <span className="ms-auto text-[11px] text-muted-foreground flex-shrink-0">{faDate(item.createdAt)}</span>
         {open ? <ChevronUp size={12} className="text-muted-foreground flex-shrink-0" />
               : <ChevronDown size={12} className="text-muted-foreground flex-shrink-0" />}
       </button>
 
       {open && (
         <div className="mt-3 space-y-3">
-          <dl className="grid sm:grid-cols-2 gap-x-4 gap-y-1.5 text-[11px]">
+          <dl className="grid sm:grid-cols-2 gap-x-4 gap-y-1.5 text-[12px]">
             <Detail label="رابط" value={item.contactName} />
             <Detail label="ایمیل" value={item.email} ltr />
             <Detail label="تماس" value={item.phone} ltr />
@@ -138,15 +138,15 @@ function RequestRow({ item, onChanged }: { item: AccessRequest; onChanged: () =>
 
           {item.note && (
             <div>
-              <p className="text-[10px] text-muted-foreground mb-1">توضیحات</p>
-              <p className="text-[11px] text-foreground leading-relaxed bg-secondary/40 border border-border rounded px-2.5 py-2 whitespace-pre-wrap">
+              <p className="text-[11px] text-muted-foreground mb-1">توضیحات</p>
+              <p className="text-[12px] text-foreground leading-relaxed bg-secondary/40 border border-border rounded px-2.5 py-2 whitespace-pre-wrap">
                 {item.note}
               </p>
             </div>
           )}
 
           {msg && (
-            <div className={`flex items-start gap-2 text-[11px] rounded px-2.5 py-1.5 border ${
+            <div className={`flex items-start gap-2 text-[12px] rounded px-2.5 py-1.5 border ${
               msg.ok ? "text-primary border-primary/25 bg-primary/5" : "text-[#ff3b3b] border-[#ff3b3b]/25 bg-[#ff3b3b]/5"
             }`}>
               {msg.ok ? <CheckCircle size={12} className="mt-0.5 flex-shrink-0" /> : <AlertTriangle size={12} className="mt-0.5 flex-shrink-0" />}
@@ -157,11 +157,11 @@ function RequestRow({ item, onChanged }: { item: AccessRequest; onChanged: () =>
           {item.status === "pending" && !approving && (
             <div className="flex items-center gap-2">
               <button onClick={() => setApproving(true)} disabled={busy}
-                className="flex items-center gap-1.5 py-1.5 px-2.5 rounded bg-primary/15 border border-primary/30 text-primary text-[11px] hover:bg-primary/25 transition-colors disabled:opacity-40">
+                className="flex items-center gap-1.5 py-1.5 px-2.5 rounded bg-primary/15 border border-primary/30 text-primary text-[12px] hover:bg-primary/25 transition-colors disabled:opacity-40">
                 <UserPlus size={11} /> تأیید و ایجاد حساب
               </button>
               <button onClick={reject} disabled={busy}
-                className="flex items-center gap-1.5 py-1.5 px-2.5 rounded border border-border text-[11px] text-muted-foreground hover:text-[#ff3b3b] hover:border-[#ff3b3b]/30 transition-colors disabled:opacity-40">
+                className="flex items-center gap-1.5 py-1.5 px-2.5 rounded border border-border text-[12px] text-muted-foreground hover:text-[#ff3b3b] hover:border-[#ff3b3b]/30 transition-colors disabled:opacity-40">
                 {busy ? <Loader2 size={11} className="animate-spin" /> : <X size={11} />} رد درخواست
               </button>
             </div>
@@ -169,29 +169,29 @@ function RequestRow({ item, onChanged }: { item: AccessRequest; onChanged: () =>
 
           {approving && (
             <form onSubmit={approve} className="space-y-2 bg-secondary/30 border border-border rounded p-3">
-              <p className="text-[10px] text-muted-foreground">
+              <p className="text-[11px] text-muted-foreground">
                 نام کاربری و رمز عبور را شما تعیین می‌کنید؛ سپس آن را از کانالی امن به مشتری بدهید.
               </p>
               <div className="grid sm:grid-cols-2 gap-2">
                 <div>
-                  <label className="text-[10px] text-muted-foreground">نام کاربری</label>
+                  <label className="text-[11px] text-muted-foreground">نام کاربری</label>
                   <input value={username} onChange={e => setUsername(e.target.value)} dir="ltr" placeholder="acme-corp"
-                    className="mt-1 w-full py-1.5 px-2 bg-secondary border border-border rounded text-[12px] font-mono text-foreground focus:outline-none focus:border-primary/40" />
+                    className="mt-1 w-full py-1.5 px-2 bg-secondary border border-border rounded text-[13px] font-mono text-foreground focus:outline-none focus:border-primary/40" />
                 </div>
                 <div>
-                  <label className="text-[10px] text-muted-foreground">رمز عبور</label>
+                  <label className="text-[11px] text-muted-foreground">رمز عبور</label>
                   <input type="password" value={password} onChange={e => setPassword(e.target.value)} dir="ltr"
                     placeholder="حداقل ۱۲ نویسه"
-                    className="mt-1 w-full py-1.5 px-2 bg-secondary border border-border rounded text-[12px] font-mono text-foreground placeholder:text-muted-foreground/50 focus:outline-none focus:border-primary/40" />
+                    className="mt-1 w-full py-1.5 px-2 bg-secondary border border-border rounded text-[13px] font-mono text-foreground placeholder:text-muted-foreground/50 focus:outline-none focus:border-primary/40" />
                 </div>
               </div>
               <div className="flex items-center gap-2">
                 <button type="submit" disabled={busy || !username || !password}
-                  className="flex items-center gap-1.5 py-1.5 px-2.5 rounded bg-primary/15 border border-primary/30 text-primary text-[11px] hover:bg-primary/25 transition-colors disabled:opacity-40">
+                  className="flex items-center gap-1.5 py-1.5 px-2.5 rounded bg-primary/15 border border-primary/30 text-primary text-[12px] hover:bg-primary/25 transition-colors disabled:opacity-40">
                   {busy ? <Loader2 size={11} className="animate-spin" /> : <UserPlus size={11} />} ایجاد حساب
                 </button>
                 <button type="button" onClick={() => { setApproving(false); setMsg(null); }}
-                  className="text-[11px] text-muted-foreground hover:text-foreground transition-colors">
+                  className="text-[12px] text-muted-foreground hover:text-foreground transition-colors">
                   انصراف
                 </button>
               </div>
@@ -208,7 +208,7 @@ function StatusChip({ status }: { status: AccessRequest["status"] }) {
             : status === "approved" ? "text-primary border-primary/30 bg-primary/5"
             : "text-muted-foreground border-border";
   return (
-    <span className={`text-[9px] rounded px-1.5 py-0.5 border flex-shrink-0 ${cls}`}>
+    <span className={`text-[10px] rounded px-1.5 py-0.5 border flex-shrink-0 ${cls}`}>
       {STATUS_FA[status]}
     </span>
   );

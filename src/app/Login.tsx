@@ -57,7 +57,7 @@ export default function Login() {
         <div className="flex items-center justify-center gap-2 mb-1">
           <Shield size={20} className="text-primary" />
           <span className="font-mono font-bold text-primary tracking-widest text-lg" dir="ltr">AFRANET</span>
-          <span className="text-[11px] text-muted-foreground border-s border-border ps-2 ms-1">افراکاو</span>
+          <span className="text-[12px] text-muted-foreground border-s border-border ps-2 ms-1">افراکاو</span>
         </div>
         <p className="text-center text-xs text-muted-foreground mb-8">
           سامانهٔ هوش سطح حمله — ورود مشتریان و مدیران
@@ -71,7 +71,7 @@ export default function Login() {
               <ShieldCheck size={15} className="text-primary" />
               <span className="text-sm font-semibold text-foreground">تأیید دو مرحله‌ای</span>
             </div>
-            <p className="text-[11px] text-muted-foreground leading-relaxed">
+            <p className="text-[12px] text-muted-foreground leading-relaxed">
               کد شش‌رقمی برنامهٔ احرازکنندهٔ خود را وارد کنید. اگر به آن دسترسی ندارید،
               می‌توانید یکی از کدهای بازیابی را بنویسید.
             </p>
@@ -98,14 +98,14 @@ export default function Login() {
             </button>
 
             <button type="button" onClick={startOver}
-              className="w-full flex items-center justify-center gap-1.5 text-[11px] text-muted-foreground hover:text-foreground transition-colors">
+              className="w-full flex items-center justify-center gap-1.5 text-[12px] text-muted-foreground hover:text-foreground transition-colors">
               <ArrowRight size={11} /> بازگشت و ورود با حساب دیگر
             </button>
           </form>
         ) : (
         <form onSubmit={submit} className="bg-card border border-border rounded p-6 space-y-4">
           <div>
-            <label className="text-[11px] text-muted-foreground">نام کاربری</label>
+            <label className="text-[12px] text-muted-foreground">نام کاربری</label>
             <div className="mt-1 flex items-center bg-secondary border border-border rounded overflow-hidden focus-within:border-primary/40 transition-colors">
               <span className="px-3 text-muted-foreground"><UserIcon size={14} /></span>
               <input
@@ -118,7 +118,7 @@ export default function Login() {
           </div>
 
           <div>
-            <label className="text-[11px] text-muted-foreground">رمز عبور</label>
+            <label className="text-[12px] text-muted-foreground">رمز عبور</label>
             <div className="mt-1 flex items-center bg-secondary border border-border rounded overflow-hidden focus-within:border-primary/40 transition-colors">
               <span className="px-3 text-muted-foreground"><Lock size={14} /></span>
               <input
@@ -147,7 +147,7 @@ export default function Login() {
         )}
 
         {!requesting && !challenge && (
-          <p className="text-center text-[11px] text-muted-foreground mt-6">
+          <p className="text-center text-[12px] text-muted-foreground mt-6">
             هنوز حساب کاربری ندارید؟{" "}
             <button onClick={() => { setRequesting(true); setError(""); }}
               className="text-primary hover:underline">

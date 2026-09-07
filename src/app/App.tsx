@@ -47,7 +47,7 @@ const SEV_FA: Record<Sev, string> = {
 function SevBadge({ s }: { s: Sev }) {
   const c = SEV[s];
   return (
-    <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 text-[10px] font-bold rounded border ${c.color} ${c.bg} ${c.border}`}>
+    <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 text-[11px] font-bold rounded border ${c.color} ${c.bg} ${c.border}`}>
       <span className="w-1 h-1 rounded-full" style={{ background: c.hex }} />{SEV_FA[s]}
     </span>
   );
@@ -75,7 +75,7 @@ function BrandNav({ username, onLogout, onSettings, maxW = "max-w-5xl" }: {
         <div className="flex items-center gap-2">
           <Shield size={16} className="text-primary" />
           <span className="font-mono font-bold text-primary tracking-widest text-sm" dir="ltr">AFRANET</span>
-          <span className="text-[10px] text-muted-foreground border-s border-border ps-2">افراکاو</span>
+          <span className="text-[11px] text-muted-foreground border-s border-border ps-2">افراکاو</span>
         </div>
         <div className="ms-auto flex items-center gap-4">
           {username && <span className="text-xs font-mono text-muted-foreground hidden sm:block" dir="ltr">{username}</span>}
@@ -107,7 +107,7 @@ function Home({ hosts, loading, onSearch, username, onLogout, onSettings }: {
       {/* Hero */}
       <div className="flex-1 flex flex-col items-center px-4 py-10">
         <div className="w-full max-w-3xl">
-          <h1 className="text-center text-3xl sm:text-4xl font-bold text-foreground mb-2 tracking-tight" style={{ fontFamily: "'Vazirmatn', sans-serif" }}>
+          <h1 className="text-center text-3xl sm:text-4xl font-bold text-foreground mb-2 tracking-tight">
             جست‌وجو در <span className="text-primary">شبکهٔ شما</span>
           </h1>
           <p className="text-center text-sm text-muted-foreground mb-8 leading-relaxed">
@@ -154,7 +154,7 @@ function Home({ hosts, loading, onSearch, username, onLogout, onSettings }: {
         </div>
       </div>
 
-      <footer className="border-t border-border py-4 px-4 text-center text-[11px] text-muted-foreground">
+      <footer className="border-t border-border py-4 px-4 text-center text-[12px] text-muted-foreground">
         افرانت ® افراکاو — هوش سطح حمله · مبتنی بر Nessus · <span dir="ltr">soc@afranet.io</span>
       </footer>
     </div>
@@ -202,29 +202,29 @@ function SearchResults({
         {/* Facets */}
         <aside className="hidden md:block w-44 flex-shrink-0 space-y-6">
           <div>
-            <p className="text-[10px] text-muted-foreground mb-2">پورت‌های پرتکرار</p>
+            <p className="text-[11px] text-muted-foreground mb-2">پورت‌های پرتکرار</p>
             {Array.from(new Set(results.flatMap(h => h.ports.map(p => p.port)))).slice(0, 8).map(port => (
               <button key={port} onClick={() => onSearch(`port:${port}`)} className="flex items-center justify-between w-full px-2 py-1 text-xs font-mono text-muted-foreground hover:text-primary hover:bg-secondary rounded transition-colors">
                 <span dir="ltr">{port}</span>
-                <span className="text-[10px]">{faNum(results.filter(h => h.ports.some(p => p.port === port)).length)}</span>
+                <span className="text-[11px]">{faNum(results.filter(h => h.ports.some(p => p.port === port)).length)}</span>
               </button>
             ))}
           </div>
           <div>
-            <p className="text-[10px] text-muted-foreground mb-2">سیستم‌عامل</p>
+            <p className="text-[11px] text-muted-foreground mb-2">سیستم‌عامل</p>
             {Array.from(new Set(results.map(h => h.os.split(" ").slice(0, 2).join(" ")))).map(os => (
               <button key={os} onClick={() => onSearch(os)} className="flex items-center justify-between w-full px-2 py-1 text-xs font-mono text-muted-foreground hover:text-primary hover:bg-secondary rounded transition-colors text-start">
                 <span className="truncate" dir="ltr">{os}</span>
-                <span className="text-[10px] flex-shrink-0 ms-1">{faNum(results.filter(h => h.os.startsWith(os)).length)}</span>
+                <span className="text-[11px] flex-shrink-0 ms-1">{faNum(results.filter(h => h.os.startsWith(os)).length)}</span>
               </button>
             ))}
           </div>
           <div>
-            <p className="text-[10px] text-muted-foreground mb-2">برچسب‌ها</p>
+            <p className="text-[11px] text-muted-foreground mb-2">برچسب‌ها</p>
             {Array.from(new Set(results.flatMap(h => h.tags))).slice(0, 10).map(tag => (
               <button key={tag} onClick={() => onSearch(`tag:${tag}`)} className="flex items-center justify-between w-full px-2 py-1 text-xs font-mono text-muted-foreground hover:text-primary hover:bg-secondary rounded transition-colors">
                 <span dir="ltr">{tag}</span>
-                <span className="text-[10px]">{faNum(results.filter(h => h.tags.includes(tag)).length)}</span>
+                <span className="text-[11px]">{faNum(results.filter(h => h.tags.includes(tag)).length)}</span>
               </button>
             ))}
           </div>
@@ -253,24 +253,24 @@ function SearchResults({
                     <div>
                       <div className="flex items-center gap-2 mb-0.5 flex-wrap">
                         <span className="font-mono font-bold text-primary text-base group-hover:underline" dir="ltr">{h.ip}</span>
-                        {critCount > 0 && <span className="text-[9px] font-bold px-1.5 py-0.5 bg-[#ff3b3b]/10 border border-[#ff3b3b]/25 text-[#ff3b3b] rounded">{faNum(critCount)} بحرانی</span>}
+                        {critCount > 0 && <span className="text-[10px] font-bold px-1.5 py-0.5 bg-[#ff3b3b]/10 border border-[#ff3b3b]/25 text-[#ff3b3b] rounded">{faNum(critCount)} بحرانی</span>}
                         {h.vulns.some(v => v.exploitAvailable) && (
-                          <span className="flex items-center gap-1 text-[9px] font-bold px-1.5 py-0.5 bg-[#ff3b3b]/10 border border-[#ff3b3b]/25 text-[#ff3b3b] rounded">
+                          <span className="flex items-center gap-1 text-[10px] font-bold px-1.5 py-0.5 bg-[#ff3b3b]/10 border border-[#ff3b3b]/25 text-[#ff3b3b] rounded">
                             <Zap size={8} /> اکسپلویت
                           </span>
                         )}
                       </div>
-                      <div className="flex flex-wrap gap-2 text-[11px] text-muted-foreground font-mono" dir="ltr">
+                      <div className="flex flex-wrap gap-2 text-[12px] text-muted-foreground font-mono" dir="ltr">
                         {h.hostnames.map(n => <span key={n}>{n}</span>)}
                       </div>
                     </div>
-                    <div className="text-end text-[11px] text-muted-foreground flex-shrink-0">
+                    <div className="text-end text-[12px] text-muted-foreground flex-shrink-0">
                       <p dir="ltr" className="font-mono">{subnetLabel(h.ip)}</p>
                       <p>{timeAgo(h.lastScan)}</p>
                     </div>
                   </div>
 
-                  <div className="flex flex-wrap items-center gap-x-4 gap-y-0.5 mb-3 text-[11px] text-muted-foreground">
+                  <div className="flex flex-wrap items-center gap-x-4 gap-y-0.5 mb-3 text-[12px] text-muted-foreground">
                     <span className="flex items-center gap-1"><Building size={10} /><span dir="ltr">{h.org}</span></span>
                     <span className="flex items-center gap-1"><Cpu size={10} /><span dir="ltr">{h.os}</span></span>
                     <span className="flex items-center gap-1"><Activity size={10} />{faNum(h.vulns.length)} یافته</span>
@@ -278,7 +278,7 @@ function SearchResults({
 
                   <div className="flex flex-wrap gap-1.5 mb-3">
                     {h.ports.map(p => (
-                      <span key={p.port} dir="ltr" className={`text-[10px] font-mono border border-current/20 bg-current/5 rounded px-1.5 py-0.5 ${svcCls(p.service)}`}>
+                      <span key={p.port} dir="ltr" className={`text-[11px] font-mono border border-current/20 bg-current/5 rounded px-1.5 py-0.5 ${svcCls(p.service)}`}>
                         <span className="font-bold">{p.port}</span><span className="opacity-60">/{p.service}</span>
                       </span>
                     ))}
@@ -287,12 +287,12 @@ function SearchResults({
                   {h.vulns.filter(v => v.cve !== "N/A").length > 0 && (
                     <div className="flex flex-wrap gap-1">
                       {h.vulns.filter(v => v.cve !== "N/A").slice(0, 4).map(v => (
-                        <span key={v.cve} dir="ltr" className="text-[9px] font-mono px-1.5 py-0.5 bg-[#ff3b3b]/8 border border-[#ff3b3b]/20 text-[#ff3b3b]/80 rounded">{v.cve}</span>
+                        <span key={v.cve} dir="ltr" className="text-[10px] font-mono px-1.5 py-0.5 bg-[#ff3b3b]/8 border border-[#ff3b3b]/20 text-[#ff3b3b]/80 rounded">{v.cve}</span>
                       ))}
                       {h.vulns.filter(v => v.cve !== "N/A").length > 4 && (
-                        <span className="text-[9px] px-1.5 py-0.5 bg-secondary border border-border text-muted-foreground rounded">{faNum(h.vulns.filter(v => v.cve !== "N/A").length - 4)} مورد دیگر</span>
+                        <span className="text-[10px] px-1.5 py-0.5 bg-secondary border border-border text-muted-foreground rounded">{faNum(h.vulns.filter(v => v.cve !== "N/A").length - 4)} مورد دیگر</span>
                       )}
-                      <span className="ms-auto text-[10px] font-mono text-muted-foreground self-center" dir="ltr">
+                      <span className="ms-auto text-[11px] font-mono text-muted-foreground self-center" dir="ltr">
                         {critCount}C · {highCount}H · {h.vulns.filter(v => v.severity === "Medium").length}M
                       </span>
                     </div>
@@ -349,11 +349,11 @@ function HostPage({ host, onBack, backLabel, onHome, onSearch }: {
         <aside className="hidden md:flex flex-col gap-5 w-52 xl:w-60 flex-shrink-0">
           {/* General info box */}
           <div className="bg-card border border-border rounded p-4 space-y-3">
-            <p className="text-[10px] text-muted-foreground">اطلاعات کلی</p>
+            <p className="text-[11px] text-muted-foreground">اطلاعات کلی</p>
             {[
               { label: "نشانی IP", value: host.ip, cls: "text-primary font-mono", ltr: true },
-              { label: "نام میزبان‌ها", value: host.hostnames.join("\n"), cls: "text-foreground font-mono text-[11px]", ltr: true },
-              { label: "دامنه‌ها", value: host.domains.join(", "), cls: "text-foreground font-mono text-[11px]", ltr: true },
+              { label: "نام میزبان‌ها", value: host.hostnames.join("\n"), cls: "text-foreground font-mono text-[12px]", ltr: true },
+              { label: "دامنه‌ها", value: host.domains.join(", "), cls: "text-foreground font-mono text-[12px]", ltr: true },
               // Nessus carries no location data, so the panel shows what the scan
               // really knows: which subnet the host sits in.
               { label: "زیرشبکه", value: subnetLabel(host.ip), cls: "text-foreground font-mono", ltr: true },
@@ -362,7 +362,7 @@ function HostPage({ host, onBack, backLabel, onHome, onSearch }: {
               { label: "آخرین اسکن", value: timeAgo(host.lastScan), cls: "text-foreground", ltr: false },
             ].map(({ label, value, cls, ltr }) => (
               <div key={label}>
-                <p className="text-[9px] text-muted-foreground">{label}</p>
+                <p className="text-[10px] text-muted-foreground">{label}</p>
                 <p dir={ltr ? "ltr" : undefined} className={`text-xs mt-0.5 break-words whitespace-pre-line leading-snug ${ltr ? "text-end" : ""} ${cls}`}>{value}</p>
               </div>
             ))}
@@ -371,10 +371,10 @@ function HostPage({ host, onBack, backLabel, onHome, onSearch }: {
           {/* Tags */}
           {host.tags.length > 0 && (
             <div className="bg-card border border-border rounded p-4">
-              <p className="text-[10px] text-muted-foreground mb-2">برچسب‌ها</p>
+              <p className="text-[11px] text-muted-foreground mb-2">برچسب‌ها</p>
               <div className="flex flex-wrap gap-1.5">
                 {host.tags.map(t => (
-                  <button key={t} onClick={() => onSearch(`tag:${t}`)} className="text-[10px] font-mono px-2 py-0.5 border border-border rounded text-muted-foreground hover:text-primary hover:border-primary/30 transition-colors flex items-center gap-1">
+                  <button key={t} onClick={() => onSearch(`tag:${t}`)} className="text-[11px] font-mono px-2 py-0.5 border border-border rounded text-muted-foreground hover:text-primary hover:border-primary/30 transition-colors flex items-center gap-1">
                     <Tag size={8} /><span dir="ltr">{t}</span>
                   </button>
                 ))}
@@ -384,7 +384,7 @@ function HostPage({ host, onBack, backLabel, onHome, onSearch }: {
 
           {/* Vuln summary */}
           <div className="bg-card border border-border rounded p-4">
-            <p className="text-[10px] text-muted-foreground mb-3">آسیب‌پذیری‌ها</p>
+            <p className="text-[11px] text-muted-foreground mb-3">آسیب‌پذیری‌ها</p>
             <div className="space-y-1.5">
               {sevCounts.map(({ s, count }) => count > 0 && (
                 <button
@@ -433,7 +433,7 @@ function HostPage({ host, onBack, backLabel, onHome, onSearch }: {
                   >
                     <div className="flex items-center gap-2 flex-shrink-0 w-24" dir="ltr">
                       <span className="font-mono font-bold text-primary text-sm">{p.port}</span>
-                      <span className="text-[10px] font-mono text-muted-foreground">{p.proto.toUpperCase()}</span>
+                      <span className="text-[11px] font-mono text-muted-foreground">{p.proto.toUpperCase()}</span>
                     </div>
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2 flex-wrap" dir="ltr">
@@ -442,14 +442,14 @@ function HostPage({ host, onBack, backLabel, onHome, onSearch }: {
                       </div>
                     </div>
                     <div className="flex items-center gap-2 flex-shrink-0 text-muted-foreground">
-                      <span className="text-[10px] group-hover:text-primary transition-colors">{isOpen ? "بستن" : "نمایش بنر"}</span>
+                      <span className="text-[11px] group-hover:text-primary transition-colors">{isOpen ? "بستن" : "نمایش بنر"}</span>
                       {isOpen ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
                     </div>
                   </div>
                   {/* Banner */}
                   {isOpen && (
                     <div className="px-4 pb-4" dir="ltr" style={{ background: "var(--terminal-bg)" }}>
-                      <pre className="text-[11px] font-mono text-muted-foreground whitespace-pre-wrap leading-relaxed border border-border/50 rounded p-3 overflow-x-auto text-left">
+                      <pre className="text-[12px] font-mono text-muted-foreground whitespace-pre-wrap leading-relaxed border border-border/50 rounded p-3 overflow-x-auto text-left">
                         {p.banner}
                       </pre>
                     </div>
@@ -473,7 +473,7 @@ function HostPage({ host, onBack, backLabel, onHome, onSearch }: {
                   <button
                     key={s}
                     onClick={() => setVulnFilter(s)}
-                    className={`text-[10px] px-2 py-0.5 rounded border transition-colors
+                    className={`text-[11px] px-2 py-0.5 rounded border transition-colors
                       ${vulnFilter === s
                         ? s === "All" ? "bg-primary/10 border-primary/30 text-primary" : `${SEV[s as Sev].bg} ${SEV[s as Sev].border} ${SEV[s as Sev].color}`
                         : "border-border text-muted-foreground hover:text-foreground hover:bg-secondary"
@@ -485,7 +485,7 @@ function HostPage({ host, onBack, backLabel, onHome, onSearch }: {
                 {exploitCount > 0 && (
                   <button
                     onClick={() => setVulnFilter("Exploit")}
-                    className={`flex items-center gap-1 text-[10px] px-2 py-0.5 rounded border transition-colors
+                    className={`flex items-center gap-1 text-[11px] px-2 py-0.5 rounded border transition-colors
                       ${vulnFilter === "Exploit"
                         ? "bg-[#ff3b3b]/10 border-[#ff3b3b]/30 text-[#ff3b3b]"
                         : "border-border text-muted-foreground hover:text-foreground hover:bg-secondary"
@@ -507,28 +507,28 @@ function HostPage({ host, onBack, backLabel, onHome, onSearch }: {
 
                       <div className="flex flex-wrap items-center gap-3 mb-2.5">
                         {v.cve !== "N/A" && (
-                          <span className="text-[11px] font-mono text-primary" dir="ltr">{v.cve}</span>
+                          <span className="text-[12px] font-mono text-primary" dir="ltr">{v.cve}</span>
                         )}
-                        <span className="text-[11px] text-muted-foreground">پلاگین <span className="font-mono" dir="ltr">#{v.pluginId}</span></span>
-                        <span className="text-[11px] font-mono text-muted-foreground" dir="ltr">{v.family}</span>
-                        <span dir="ltr" className={`text-[11px] font-mono font-bold ${v.cvss >= 9 ? "text-[#ff3b3b]" : v.cvss >= 7 ? "text-[#ff8c00]" : v.cvss >= 4 ? "text-[#f5c518]" : "text-[#3b82f6]"}`}>
+                        <span className="text-[12px] text-muted-foreground">پلاگین <span className="font-mono" dir="ltr">#{v.pluginId}</span></span>
+                        <span className="text-[12px] font-mono text-muted-foreground" dir="ltr">{v.family}</span>
+                        <span dir="ltr" className={`text-[12px] font-mono font-bold ${v.cvss >= 9 ? "text-[#ff3b3b]" : v.cvss >= 7 ? "text-[#ff8c00]" : v.cvss >= 4 ? "text-[#f5c518]" : "text-[#3b82f6]"}`}>
                           CVSS {v.cvss.toFixed(1)}
                         </span>
                         <ExploitBadges vuln={v} />
                       </div>
 
-                      <p className="text-[12px] text-muted-foreground leading-relaxed mb-2.5" dir="ltr" style={{ textAlign: "start" }}>{v.description}</p>
+                      <p className="text-[13px] text-muted-foreground leading-relaxed mb-2.5" dir="ltr" style={{ textAlign: "start" }}>{v.description}</p>
 
                       <div className="flex items-start gap-2 p-2.5 rounded bg-[#00e5a0]/5 border border-[#00e5a0]/15">
                         <CheckCircle size={11} className="text-primary mt-0.5 flex-shrink-0" />
                         <div>
-                          <p className="text-[9px] text-primary mb-0.5">راهکار</p>
-                          <p className="text-[11px] text-foreground/80 leading-relaxed" dir="ltr" style={{ textAlign: "start" }}>{v.solution}</p>
+                          <p className="text-[10px] text-primary mb-0.5">راهکار</p>
+                          <p className="text-[12px] text-foreground/80 leading-relaxed" dir="ltr" style={{ textAlign: "start" }}>{v.solution}</p>
                         </div>
                       </div>
 
                       {safeHref(v.seeAlso) && (
-                        <a href={safeHref(v.seeAlso)} target="_blank" rel="noreferrer" onClick={e => e.stopPropagation()} className="mt-2 inline-flex items-center gap-1 text-[10px] text-primary hover:underline">
+                        <a href={safeHref(v.seeAlso)} target="_blank" rel="noreferrer" onClick={e => e.stopPropagation()} className="mt-2 inline-flex items-center gap-1 text-[11px] text-primary hover:underline">
                           <ExternalLink size={9} /> اطلاعات بیشتر
                         </a>
                       )}
@@ -546,7 +546,7 @@ function HostPage({ host, onBack, backLabel, onHome, onSearch }: {
         </main>
       </div>
 
-      <footer className="border-t border-border py-4 px-4 text-center text-[11px] text-muted-foreground">
+      <footer className="border-t border-border py-4 px-4 text-center text-[12px] text-muted-foreground">
         افرانت ® افراکاو · <span dir="ltr">soc@afranet.io</span>
       </footer>
     </div>

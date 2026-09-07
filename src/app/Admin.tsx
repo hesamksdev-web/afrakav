@@ -36,7 +36,7 @@ export default function Admin() {
         <div className="max-w-6xl mx-auto px-4 py-3 flex items-center gap-3">
           <Shield size={16} className="text-primary" />
           <span className="font-mono font-bold text-primary tracking-widest text-sm" dir="ltr">AFRANET</span>
-          <span className="text-[10px] text-muted-foreground border-s border-border ps-2">مدیریت</span>
+          <span className="text-[11px] text-muted-foreground border-s border-border ps-2">مدیریت</span>
           <div className="ms-auto flex items-center gap-4">
             <span className="text-xs font-mono text-muted-foreground hidden sm:block" dir="ltr">{user?.username}</span>
             <button onClick={() => setSettingsOpen(true)} title="تنظیمات حساب"
@@ -85,7 +85,7 @@ export default function Admin() {
           ) : (
             <table className="w-full text-xs">
               <thead>
-                <tr className="text-[10px] text-muted-foreground border-b border-border">
+                <tr className="text-[11px] text-muted-foreground border-b border-border">
                   <th className="text-start px-4 py-2 font-normal">مشتری</th>
                   <th className="text-end px-2 py-2 font-normal">میزبان‌ها</th>
                   <th className="text-end px-2 py-2 font-normal">اسکن‌ها</th>
@@ -100,23 +100,23 @@ export default function Admin() {
                       <div className="flex items-center gap-2">
                         <span className="text-foreground font-mono" dir="ltr" style={{ textAlign: "start" }}>{c.username}</span>
                         {c.disabled && (
-                          <span className="text-[9px] text-[#ff3b3b] border border-[#ff3b3b]/30 bg-[#ff3b3b]/5 rounded px-1.5 py-0.5">
+                          <span className="text-[10px] text-[#ff3b3b] border border-[#ff3b3b]/30 bg-[#ff3b3b]/5 rounded px-1.5 py-0.5">
                             غیرفعال
                           </span>
                         )}
                         {c.totpEnabled ? (
                           <span title="ورود دو عاملی فعال است"
-                            className="flex items-center gap-0.5 text-[9px] text-primary border border-primary/30 bg-primary/5 rounded px-1.5 py-0.5">
+                            className="flex items-center gap-0.5 text-[10px] text-primary border border-primary/30 bg-primary/5 rounded px-1.5 py-0.5">
                             <ShieldCheck size={9} /> دو عاملی
                           </span>
                         ) : (
                           <span title="این مشتری هنوز ورود دو عاملی را فعال نکرده است"
-                            className="text-[9px] text-muted-foreground border border-border rounded px-1.5 py-0.5">
+                            className="text-[10px] text-muted-foreground border border-border rounded px-1.5 py-0.5">
                             بدون دو عاملی
                           </span>
                         )}
                       </div>
-                      {c.displayName && <div className="text-[10px] text-muted-foreground">{c.displayName}</div>}
+                      {c.displayName && <div className="text-[11px] text-muted-foreground">{c.displayName}</div>}
                     </td>
                     <td className="text-end px-2 py-2.5 text-primary">{faNum(c.hostCount)}</td>
                     <td className="text-end px-2 py-2.5 text-muted-foreground">{faNum(c.scanCount)}</td>
@@ -134,7 +134,7 @@ export default function Admin() {
         </div>
       </div>
 
-      <footer className="mt-auto border-t border-border py-4 px-4 text-center text-[11px] text-muted-foreground">
+      <footer className="mt-auto border-t border-border py-4 px-4 text-center text-[12px] text-muted-foreground">
         افرانت ® افراکاو · پنل مدیریت
       </footer>
     </div>
@@ -212,7 +212,7 @@ function UploadCard({ customers, onUploaded }: { customers: Customer[]; onUpload
       </div>
       <form onSubmit={submit} className="space-y-2.5">
         <div>
-          <label className="text-[10px] text-muted-foreground">تخصیص به مشتری</label>
+          <label className="text-[11px] text-muted-foreground">تخصیص به مشتری</label>
           <select value={customerId} onChange={e => setCustomerId(e.target.value === "" ? "" : Number(e.target.value))}
             className="mt-1 w-full py-2 px-2 bg-secondary border border-border rounded text-sm text-foreground focus:outline-none focus:border-primary/40">
             <option value="">— انتخاب مشتری —</option>
@@ -221,7 +221,7 @@ function UploadCard({ customers, onUploaded }: { customers: Customer[]; onUpload
         </div>
 
         <div>
-          <label className="text-[10px] text-muted-foreground">فایل Nessus <span dir="ltr" className="font-mono">(.nessus)</span></label>
+          <label className="text-[11px] text-muted-foreground">فایل Nessus <span dir="ltr" className="font-mono">(.nessus)</span></label>
           <button type="button" onClick={() => inputRef.current?.click()}
             className="mt-1 w-full flex items-center gap-2 py-2 px-3 bg-secondary border border-border rounded text-xs text-muted-foreground hover:border-primary/40 transition-colors">
             <FileText size={13} className="text-primary flex-shrink-0" />
@@ -316,9 +316,9 @@ function CustomerActions({ customer, onChanged }: { customer: Customer; onChange
         <form onSubmit={reset} className="flex items-center gap-1.5">
           <input type="password" value={password} onChange={e => setPassword(e.target.value)}
             placeholder="رمز جدید — حداقل ۱۲ نویسه" dir="ltr"
-            className="w-44 py-1 px-2 bg-secondary border border-border rounded text-[11px] font-mono text-foreground placeholder:text-muted-foreground/50 focus:outline-none focus:border-primary/40" />
+            className="w-44 py-1 px-2 bg-secondary border border-border rounded text-[12px] font-mono text-foreground placeholder:text-muted-foreground/50 focus:outline-none focus:border-primary/40" />
           <button type="submit" disabled={busy || !password}
-            className="py-1 px-2 rounded bg-primary/15 border border-primary/30 text-primary text-[11px] hover:bg-primary/25 transition-colors disabled:opacity-40">
+            className="py-1 px-2 rounded bg-primary/15 border border-primary/30 text-primary text-[12px] hover:bg-primary/25 transition-colors disabled:opacity-40">
             ذخیره
           </button>
         </form>
@@ -335,7 +335,7 @@ function Field({ label, value, onChange, placeholder, type = "text", ltr = false
 }) {
   return (
     <div>
-      <label className="text-[10px] text-muted-foreground">{label}</label>
+      <label className="text-[11px] text-muted-foreground">{label}</label>
       <input type={type} value={value} onChange={e => onChange(e.target.value)} placeholder={placeholder}
         dir={ltr ? "ltr" : undefined}
         className={`mt-1 w-full py-2 px-2 bg-secondary border border-border rounded text-sm ${ltr ? "font-mono" : ""} text-foreground placeholder:text-muted-foreground/50 focus:outline-none focus:border-primary/40`} />
@@ -346,7 +346,7 @@ function Field({ label, value, onChange, placeholder, type = "text", ltr = false
 function Msg({ msg }: { msg: { ok: boolean; text: string } | null }) {
   if (!msg) return null;
   return (
-    <div className={`flex items-center gap-2 text-[11px] rounded px-2.5 py-1.5 border ${
+    <div className={`flex items-center gap-2 text-[12px] rounded px-2.5 py-1.5 border ${
       msg.ok ? "text-primary border-primary/25 bg-primary/5" : "text-[#ff3b3b] border-[#ff3b3b]/25 bg-[#ff3b3b]/5"
     }`}>
       {msg.ok ? <CheckCircle size={12} /> : <AlertTriangle size={12} />} {msg.text}

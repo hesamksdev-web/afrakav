@@ -108,7 +108,7 @@ function TwoFactorCard({ enabled, recoveryLeft, onChanged }: {
       <div className="px-4 py-3 border-b border-border bg-secondary/20 flex items-center gap-2">
         {enabled ? <ShieldCheck size={14} className="text-primary" /> : <ShieldOff size={14} className="text-muted-foreground" />}
         <span className="text-xs font-semibold text-foreground">ورود دو عاملی</span>
-        <span className={`ms-auto text-[10px] rounded px-1.5 py-0.5 border ${
+        <span className={`ms-auto text-[11px] rounded px-1.5 py-0.5 border ${
           enabled
             ? "text-primary border-primary/30 bg-primary/5"
             : "text-muted-foreground border-border"
@@ -122,14 +122,14 @@ function TwoFactorCard({ enabled, recoveryLeft, onChanged }: {
           <RecoveryCodes codes={codes} onDone={() => { setStage("idle"); setCodes([]); }} />
         ) : enabled ? (
           <>
-            <p className="text-[12px] text-muted-foreground leading-relaxed">
+            <p className="text-[13px] text-muted-foreground leading-relaxed">
               ورود به حساب شما علاوه بر رمز عبور، به کد شش‌رقمی برنامهٔ احرازکنندهٔ شما نیاز دارد.
               {recoveryLeft !== null && (
                 <> در حال حاضر <span className="text-foreground font-mono">{faNum(recoveryLeft)}</span> کد بازیابی استفاده‌نشده دارید.</>
               )}
             </p>
             <form onSubmit={turnOff} className="space-y-2.5 pt-1">
-              <label className="text-[10px] text-muted-foreground">
+              <label className="text-[11px] text-muted-foreground">
                 برای غیرفعال‌کردن، رمز عبور فعلی خود را وارد کنید
               </label>
               <input type="password" value={password} onChange={e => setPassword(e.target.value)} dir="ltr"
@@ -143,7 +143,7 @@ function TwoFactorCard({ enabled, recoveryLeft, onChanged }: {
           </>
         ) : stage === "scanning" && setup ? (
           <>
-            <ol className="text-[12px] text-muted-foreground leading-relaxed space-y-1 list-decimal ps-4">
+            <ol className="text-[13px] text-muted-foreground leading-relaxed space-y-1 list-decimal ps-4">
               <li>برنامهٔ احرازکننده (Google Authenticator، Aegis، 1Password و مانند آن) را باز کنید.</li>
               <li>کد QR زیر را اسکن کنید، یا کلید متنی را دستی وارد کنید.</li>
               <li>کد شش‌رقمی نمایش‌داده‌شده را در کادر پایین بنویسید.</li>
@@ -157,9 +157,9 @@ function TwoFactorCard({ enabled, recoveryLeft, onChanged }: {
                     <Loader2 size={18} className="animate-spin" />
                   </div>}
               <div className="flex-1 min-w-0 w-full space-y-1.5">
-                <p className="text-[10px] text-muted-foreground">کلید متنی (اگر اسکن ممکن نبود)</p>
+                <p className="text-[11px] text-muted-foreground">کلید متنی (اگر اسکن ممکن نبود)</p>
                 <div className="flex items-center gap-1.5">
-                  <code dir="ltr" className="flex-1 text-[11px] font-mono bg-secondary border border-border rounded px-2 py-1.5 break-all">
+                  <code dir="ltr" className="flex-1 text-[12px] font-mono bg-secondary border border-border rounded px-2 py-1.5 break-all">
                     {setup.secret}
                   </code>
                   <CopyButton value={setup.secret} />
@@ -168,7 +168,7 @@ function TwoFactorCard({ enabled, recoveryLeft, onChanged }: {
             </div>
 
             <form onSubmit={confirm} className="space-y-2.5">
-              <label className="text-[10px] text-muted-foreground">کد شش‌رقمی</label>
+              <label className="text-[11px] text-muted-foreground">کد شش‌رقمی</label>
               <input value={code} onChange={e => setCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
                 inputMode="numeric" autoComplete="one-time-code" placeholder="۱۲۳۴۵۶" dir="ltr"
                 className="w-full py-2 px-2 bg-secondary border border-border rounded text-center text-lg font-mono tracking-[0.4em] text-foreground focus:outline-none focus:border-primary/40" />
@@ -187,7 +187,7 @@ function TwoFactorCard({ enabled, recoveryLeft, onChanged }: {
           </>
         ) : (
           <>
-            <p className="text-[12px] text-muted-foreground leading-relaxed">
+            <p className="text-[13px] text-muted-foreground leading-relaxed">
               با فعال‌کردن ورود دو عاملی، هنگام ورود علاوه بر رمز عبور یک کد شش‌رقمی از برنامهٔ
               احرازکنندهٔ شما هم خواسته می‌شود. اگر رمز عبورتان جایی فاش شود، حساب همچنان محافظت‌شده می‌ماند.
             </p>
@@ -221,7 +221,7 @@ function RecoveryCodes({ codes, onDone }: { codes: string[]; onDone: () => void 
 
   return (
     <div className="space-y-3">
-      <div className="flex items-start gap-2 text-[11px] text-[#ff8c00] border border-[#ff8c00]/25 bg-[#ff8c00]/5 rounded px-2.5 py-2">
+      <div className="flex items-start gap-2 text-[12px] text-[#ff8c00] border border-[#ff8c00]/25 bg-[#ff8c00]/5 rounded px-2.5 py-2">
         <AlertTriangle size={12} className="mt-0.5 flex-shrink-0" />
         <p className="leading-relaxed">
           ورود دو عاملی فعال شد. این کدهای بازیابی را همین حالا در جای امنی ذخیره کنید —
@@ -232,7 +232,7 @@ function RecoveryCodes({ codes, onDone }: { codes: string[]; onDone: () => void 
 
       <div className="grid grid-cols-2 gap-1.5" dir="ltr">
         {codes.map(c => (
-          <code key={c} className="text-[12px] font-mono text-foreground bg-secondary border border-border rounded px-2 py-1.5 text-center">
+          <code key={c} className="text-[13px] font-mono text-foreground bg-secondary border border-border rounded px-2 py-1.5 text-center">
             {c}
           </code>
         ))}
@@ -306,7 +306,7 @@ function PasswordField({ label, value, onChange, placeholder }: {
 }) {
   return (
     <div>
-      <label className="text-[10px] text-muted-foreground">{label}</label>
+      <label className="text-[11px] text-muted-foreground">{label}</label>
       <input type="password" value={value} onChange={e => onChange(e.target.value)} placeholder={placeholder} dir="ltr"
         className="mt-1 w-full py-2 px-2 bg-secondary border border-border rounded text-sm font-mono text-foreground placeholder:text-muted-foreground/50 focus:outline-none focus:border-primary/40" />
     </div>
@@ -343,7 +343,7 @@ function CopyButton({ value, label, onCopied }: { value: string; label?: string;
 function Msg({ msg }: { msg: { ok: boolean; text: string } | null }) {
   if (!msg) return null;
   return (
-    <div className={`flex items-start gap-2 text-[11px] rounded px-2.5 py-1.5 border ${
+    <div className={`flex items-start gap-2 text-[12px] rounded px-2.5 py-1.5 border ${
       msg.ok ? "text-primary border-primary/25 bg-primary/5" : "text-[#ff3b3b] border-[#ff3b3b]/25 bg-[#ff3b3b]/5"
     }`}>
       {msg.ok ? <CheckCircle size={12} className="mt-0.5 flex-shrink-0" /> : <AlertTriangle size={12} className="mt-0.5 flex-shrink-0" />}

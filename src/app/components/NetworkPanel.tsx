@@ -109,7 +109,7 @@ function Column({ icon, title, subtitle, groups, onSearch }: {
       <div className="px-4 py-2.5 border-b border-border bg-secondary/20 flex items-center gap-2">
         {icon}
         <span className="text-xs font-semibold text-foreground">{title}</span>
-        <span className="ms-auto text-[10px] text-muted-foreground">{subtitle}</span>
+        <span className="ms-auto text-[11px] text-muted-foreground">{subtitle}</span>
       </div>
 
       <div className="p-3 space-y-2">
@@ -121,14 +121,14 @@ function Column({ icon, title, subtitle, groups, onSearch }: {
             className="w-full text-start group"
           >
             <div className="flex items-baseline gap-2 mb-1">
-              <span className="text-[11px] font-mono text-foreground group-hover:text-primary transition-colors truncate" dir="ltr">
+              <span className="text-[12px] font-mono text-foreground group-hover:text-primary transition-colors truncate" dir="ltr">
                 {g.label}
               </span>
-              <span className="ms-auto text-[11px] font-mono text-muted-foreground tabular-nums">
+              <span className="ms-auto text-[12px] font-mono text-muted-foreground tabular-nums">
                 {faNum(g.hosts)}
               </span>
               {g.atRisk > 0 && (
-                <span className="text-[10px] font-mono text-[#ff3b3b] tabular-nums" title="میزبان‌های دارای یافتهٔ بحرانی یا اکسپلویت">
+                <span className="text-[11px] font-mono text-[#ff3b3b] tabular-nums" title="میزبان‌های دارای یافتهٔ بحرانی یا اکسپلویت">
                   ⚠ {faNum(g.atRisk)}
                 </span>
               )}
@@ -143,7 +143,7 @@ function Column({ icon, title, subtitle, groups, onSearch }: {
         ))}
 
         {groups.length > shown.length && (
-          <p className="text-[10px] text-muted-foreground pt-1">
+          <p className="text-[11px] text-muted-foreground pt-1">
             و {faNum(groups.length - shown.length)} مورد دیگر
           </p>
         )}

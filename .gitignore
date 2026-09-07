@@ -17,3 +17,8 @@ dist/
 
 # TLS material — never commit certificates or keys
 certs/
+
+# The Dana font package as delivered by the foundry: PDFs, the 13 static cuts
+# and format variants. Only the variable webfont the app actually loads is
+# committed, under src/assets/fonts/ with its licence beside it.
+DanaPro(13Wt)/

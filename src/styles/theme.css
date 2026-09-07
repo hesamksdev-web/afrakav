@@ -104,11 +104,12 @@
 }
 
 @theme inline {
-  /* JetBrains Mono has no Perso-Arabic glyphs, so Persian text inside
-     font-mono elements falls back to Vazirmatn while Latin data (IPs,
-     CVEs, banners) keeps the monospace look. */
-  --font-sans: 'Vazirmatn', 'Inter', sans-serif;
-  --font-mono: 'JetBrains Mono', 'Vazirmatn', monospace;
+  --font-sans: 'Dana', 'Segoe UI', Tahoma, sans-serif;
+  /* System monospace: Latin data (IPs, ports, CVEs, banners) must stay in a
+     fixed-pitch face, and shipping a second webfont for it is not worth the
+     bytes. Dana closes the stack so Persian inside a mono element still has a
+     Persian face to fall back to. */
+  --font-mono: ui-monospace, 'SF Mono', Menlo, Consolas, 'Liberation Mono', 'Dana', monospace;
   --color-background: var(--background);
   --color-foreground: var(--foreground);
   --color-card: var(--card);
@@ -156,7 +157,7 @@
 
   body {
     @apply bg-background text-foreground;
-    font-family: 'Vazirmatn', 'Inter', sans-serif;
+    font-family: var(--font-sans);
   }
 
   html {
@@ -164,7 +165,7 @@
   }
 
   h1, h2, h3, h4 {
-    font-family: 'JetBrains Mono', 'Vazirmatn', monospace;
+    font-family: var(--font-mono);
     font-weight: var(--font-weight-medium);
     line-height: 1.4;
   }
