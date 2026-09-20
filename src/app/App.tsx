@@ -166,7 +166,7 @@ function Home({ hosts, loading, scan, trend, attack, onSearch, username, onLogou
       </div>
 
       <footer className="border-t border-border py-4 px-4 text-center text-[12px] text-muted-foreground">
-        افرانت ® افراکاو — مدیریت آسیب‌پذیری · مبتنی بر Nessus · <span dir="ltr">soc@afranet.io</span>
+        افرانت ® افراکاو — مدیریت آسیب‌پذیری · <span dir="ltr">soc@afranet.ir</span>
       </footer>
     </div>
   );
@@ -624,7 +624,7 @@ function HostPage({ host, onBack, backLabel, onHome, onSearch }: {
       </div>
 
       <footer className="border-t border-border py-4 px-4 text-center text-[12px] text-muted-foreground">
-        افرانت ® افراکاو · <span dir="ltr">soc@afranet.io</span>
+        افرانت ® افراکاو · <span dir="ltr">soc@afranet.ir</span>
       </footer>
     </div>
   );
