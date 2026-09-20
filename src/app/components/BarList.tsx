@@ -12,6 +12,8 @@ export interface BarDatum {
   ltr?: boolean;
   /** Full text for the hover tooltip; falls back to "label: value". */
   title?: string;
+  /** Opens a page instead of running a search. Takes precedence over query. */
+  href?: string;
 }
 
 /**
@@ -37,16 +39,21 @@ export default function BarList({ data, labelWidth = "5rem", onSearch }: {
     <div className="space-y-0.5">
       {data.map(d => {
         const clickable = Boolean(d.query && onSearch && d.value > 0);
+        // A row either opens a page or runs a search; the two never compete.
+        const Row: any = d.href ? "a" : "button";
+        const rowProps = d.href
+          ? { href: d.href, target: "_blank", rel: "noreferrer" }
+          : { onClick: clickable ? () => onSearch!(d.query!) : undefined, disabled: !clickable };
+
         return (
-          <button
+          <Row
             key={d.key}
-            onClick={clickable ? () => onSearch!(d.query!) : undefined}
-            disabled={!clickable}
+            {...rowProps}
             title={d.title ?? `${d.label}: ${faNum(d.value)}`}
             style={{ gridTemplateColumns: `${labelWidth} minmax(0, 1fr) 2.75rem` }}
             className="w-full grid items-center gap-3 px-2 py-1.5 rounded transition-colors
-                       enabled:hover:bg-secondary/40 disabled:cursor-default
-                       disabled:opacity-55"
+                       hover:bg-secondary/40 enabled:hover:bg-secondary/40
+                       disabled:cursor-default disabled:opacity-55 disabled:hover:bg-transparent"
           >
             <span className="flex items-center gap-1.5 min-w-0">
               <span className="w-2 h-2 rounded-sm flex-shrink-0"
@@ -70,7 +77,7 @@ export default function BarList({ data, labelWidth = "5rem", onSearch }: {
             <span className="text-[12px] font-mono tabular-nums text-muted-foreground text-end">
               {faNum(d.value)}
             </span>
-          </button>
+          </Row>
         );
       })}
     </div>

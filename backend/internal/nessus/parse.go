@@ -46,9 +46,13 @@ type xmlReportItem struct {
 	CVSSBaseScore string `xml:"cvss_base_score"`
 	CVSS3Score    string `xml:"cvss3_base_score"`
 	CVE           string `xml:"cve"`
-	SeeAlso       string `xml:"see_also"`
-	PluginOutput  string `xml:"plugin_output"`
-	SvcProduct    string `xml:"product"`
+	// Real Nessus exports carry one <cwe> element per weakness class. It is
+	// the first link in the CWE -> ATT&CK chain, so it is kept rather than
+	// dropped even though nothing in the search UI uses it.
+	CWE          []string `xml:"cwe"`
+	SeeAlso      string   `xml:"see_also"`
+	PluginOutput string   `xml:"plugin_output"`
+	SvcProduct   string   `xml:"product"`
 
 	ExploitAvailable   string `xml:"exploit_available"`
 	ExploitedByMalware string `xml:"exploited_by_malware"`
@@ -146,6 +150,7 @@ func convertHost(rh xmlReportHost) Host {
 				Severity:    severityForLevel(it.Severity),
 				CVSS:        parseFloat(firstNonEmpty(it.CVSS3Score, it.CVSSBaseScore)),
 				Family:      it.PluginFamily,
+				CWE:         normalizeCWEs(it.CWE),
 				Description: collapse(it.Description),
 				Solution:    collapse(it.Solution),
 				SeeAlso:     safeURL(firstLine(it.SeeAlso)),
@@ -325,4 +330,27 @@ func normalizeTime(s string) string {
 		return isoFromUnix(ts)
 	}
 	return s
+}
+
+// normalizeCWEs turns whatever the plugin wrote ("79", "CWE-79", " 79 ") into
+// a consistent "CWE-79", dropping blanks and duplicates.
+func normalizeCWEs(raw []string) []string {
+	if len(raw) == 0 {
+		return nil
+	}
+	seen := map[string]bool{}
+	out := []string{}
+	for _, v := range raw {
+		v = strings.TrimSpace(v)
+		if v == "" {
+			continue
+		}
+		v = strings.TrimPrefix(strings.ToUpper(v), "CWE-")
+		if v == "" || seen[v] {
+			continue
+		}
+		seen[v] = true
+		out = append(out, "CWE-"+v)
+	}
+	return out
 }

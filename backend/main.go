@@ -20,6 +20,9 @@
 //	GET  /api/stats                 dashboard aggregates, scoped
 //	GET  /api/scans                 upload history, scoped
 //	GET  /api/trend                 findings over time, scoped
+//	GET  /api/attack                ATT&CK techniques across the estate
+//	GET  /api/attack/navigator      the same, as an ATT&CK Navigator layer
+//	GET  /api/hosts/{ip}/attack     ATT&CK techniques for one host
 //	GET  /api/events                caller's own security activity
 //	POST /api/password              change your own password
 //	POST /api/2fa/setup             begin enrolment -> {secret,uri}
@@ -58,6 +61,7 @@ import (
 	"github.com/afranet/afrashodan/internal/audit"
 	"github.com/afranet/afrashodan/internal/auth"
 	"github.com/afranet/afrashodan/internal/db"
+	"github.com/afranet/afrashodan/internal/mitre"
 	"github.com/afranet/afrashodan/internal/nessus"
 )
 
@@ -140,6 +144,9 @@ func main() {
 	mux.Handle("GET /api/stats", srv.authed(srv.handleStats))
 	mux.Handle("GET /api/scans", srv.authed(srv.handleScans))
 	mux.Handle("GET /api/trend", srv.authed(srv.handleTrend))
+	mux.Handle("GET /api/attack", srv.authed(srv.handleAttack))
+	mux.Handle("GET /api/attack/navigator", srv.authed(srv.handleAttackNavigator))
+	mux.Handle("GET /api/hosts/{ip}/attack", srv.authed(srv.handleHostAttack))
 	mux.Handle("GET /api/events", srv.authed(srv.handleMyEvents))
 	mux.Handle("POST /api/password", srv.authed(srv.handleChangePassword))
 	mux.Handle("POST /api/2fa/setup", srv.authed(srv.handleTOTPSetup))
@@ -736,6 +743,74 @@ func (s *server) handleTrend(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, points)
+}
+
+// ── MITRE ATT&CK ────────────────────────────────────────────────────────────
+//
+// A .nessus file carries no ATT&CK data, so these endpoints derive it: see
+// internal/mitre. Every technique says whether it came from the finding's own
+// weakness class or from one of our plugin rules, and the response counts the
+// findings that mapped to nothing — a technique list is misleading without it.
+
+// handleHostAttack answers "what could an attacker do with what is wrong on
+// this host?".
+func (s *server) handleHostAttack(w http.ResponseWriter, r *http.Request) {
+	cid, err := s.targetCustomer(r)
+	if err != nil {
+		writeScopeError(w, err)
+		return
+	}
+	h, err := s.db.GetHost(r.Context(), cid, r.PathValue("ip"))
+	if errors.Is(err, db.ErrNotFound) {
+		writeError(w, http.StatusNotFound, "host not found")
+		return
+	}
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "lookup failed")
+		return
+	}
+	res := mitre.Map(h.Vulns)
+	writeJSON(w, http.StatusOK, map[string]any{
+		"ip":               h.IP,
+		"techniques":       res.Techniques,
+		"totalFindings":    res.TotalFindings,
+		"mappedFindings":   res.MappedFindings,
+		"unmappedFindings": res.UnmappedFindings,
+	})
+}
+
+// handleAttack aggregates the mapping across the caller's whole estate,
+// counting hosts per technique — the number a defender prioritises on.
+func (s *server) handleAttack(w http.ResponseWriter, r *http.Request) {
+	cid, err := s.targetCustomer(r)
+	if err != nil {
+		writeScopeError(w, err)
+		return
+	}
+	hosts, err := s.db.ListHosts(r.Context(), cid)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "could not load hosts")
+		return
+	}
+	writeJSON(w, http.StatusOK, mitre.MapEstate(hosts))
+}
+
+// handleAttackNavigator returns the same mapping as an ATT&CK Navigator layer,
+// so a security team can overlay it on the matrix they already use.
+func (s *server) handleAttackNavigator(w http.ResponseWriter, r *http.Request) {
+	cid, err := s.targetCustomer(r)
+	if err != nil {
+		writeScopeError(w, err)
+		return
+	}
+	hosts, err := s.db.ListHosts(r.Context(), cid)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "could not load hosts")
+		return
+	}
+	name := "Afrakav — " + claimsFrom(r).Username
+	w.Header().Set("Content-Disposition", `attachment; filename="afrakav-attack-layer.json"`)
+	writeJSON(w, http.StatusOK, mitre.NavigatorLayerFor(name, mitre.MapEstate(hosts)))
 }
 
 func (s *server) handleScans(w http.ResponseWriter, r *http.Request) {

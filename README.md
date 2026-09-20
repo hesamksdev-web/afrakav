@@ -120,6 +120,37 @@ Admins read the full log from **رویدادها** in the admin panel (`GET
 Every account — admin or customer — sees its own activity (logins, password
 and two-factor changes) from **تنظیمات** (`GET /api/events`).
 
+## MITRE ATT&CK
+
+A `.nessus` file carries no ATT&CK data — Tenable's own technique mapping lives
+in their cloud products, not in the export — so Afrakav derives it in
+`backend/internal/mitre`, offline, with no external lookups at request time.
+
+Two paths produce a mapping, and every technique says which one it came from:
+
+- **`weakness`** — follows the finding's own CWE, which the parser now keeps
+  (`<cwe>` elements, previously discarded).
+- **`rule`** — a curated rule matching the plugin family and name. This is
+  Afrakav's judgement, not MITRE's, and is labelled as such everywhere it
+  appears, including in the Navigator export's comments.
+
+The rule path is not a shortcut: most findings in a real estate carry no CVE
+and no CWE at all — default SNMP communities, untrusted certificates, enabled
+TRACE — and a CVE-only mapping would leave those hosts blank.
+
+Every response also counts the findings that mapped to **nothing**. A technique
+list read without that number looks like full coverage when it is usually
+partial. The catalogue is a curated subset covering what Nessus actually
+reports, not the whole ATT&CK corpus.
+
+The mapping describes what an attacker *could* do with a weakness, not a
+verified attack path: a scan file records no internet exposure, so techniques
+like *Exploit Public-Facing Application* are not qualified by reachability.
+The host page states this in place.
+
+`GET /api/attack/navigator` returns an ATT&CK Navigator layer, scored by how
+many hosts enable each technique, for teams who already work in the matrix.
+
 ## Undoing an upload
 
 Uploading a scan merges it into a customer's current view: a host present in
@@ -153,6 +184,9 @@ Authenticated (`Authorization: Bearer <token>`):
 | GET    | `/api/stats`       | dashboard aggregates, scoped                            |
 | GET    | `/api/scans`       | upload history, scoped                                  |
 | GET    | `/api/trend`       | findings by severity after each scan, oldest first      |
+| GET    | `/api/attack`      | ATT&CK techniques across the estate, by hosts affected  |
+| GET    | `/api/attack/navigator` | the same mapping as an ATT&CK Navigator layer      |
+| GET    | `/api/hosts/{ip}/attack` | ATT&CK techniques for one host, with the findings that produced each |
 | GET    | `/api/events`      | caller's own security activity (logins, password/2FA changes) |
 | POST   | `/api/password`    | `{currentPassword,newPassword}` → a replacement token   |
 | POST   | `/api/2fa/setup`   | begin enrolment → `{secret, uri}`                       |

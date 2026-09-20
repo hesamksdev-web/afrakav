@@ -42,12 +42,16 @@ type Port struct {
 
 // Vuln is a single vulnerability finding.
 type Vuln struct {
-	CVE         string   `json:"cve"`
-	PluginID    string   `json:"pluginId"`
-	Name        string   `json:"name"`
-	Severity    Severity `json:"severity"`
-	CVSS        float64  `json:"cvss"`
-	Family      string   `json:"family"`
+	CVE      string   `json:"cve"`
+	PluginID string   `json:"pluginId"`
+	Name     string   `json:"name"`
+	Severity Severity `json:"severity"`
+	CVSS     float64  `json:"cvss"`
+	Family   string   `json:"family"`
+
+	// Weakness classes the plugin reported, normalised to "CWE-79" form. The
+	// ATT&CK mapping uses these; an empty list is common and expected.
+	CWE         []string `json:"cwe,omitempty"`
 	Description string   `json:"description"`
 	Solution    string   `json:"solution"`
 	SeeAlso     string   `json:"seeAlso,omitempty"`

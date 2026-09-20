@@ -5,7 +5,10 @@ import {
   Cpu, Wifi, ExternalLink, Tag, Activity,
   Building, LogOut, Loader2, Zap, ArrowRight, LayoutDashboard, SlidersHorizontal,
 } from "lucide-react";
-import { fetchHosts, fetchScans, fetchTrend, safeHref, EstateSnapshot, HostRecord, Severity } from "./api";
+import {
+  fetchHosts, fetchScans, fetchTrend, fetchAttack, safeHref,
+  EstateAttack, EstateSnapshot, HostRecord, Severity,
+} from "./api";
 import { AuthProvider, useAuth } from "./auth";
 import { faNum, timeAgo } from "./format";
 import Login from "./Login";
@@ -13,6 +16,7 @@ import Admin from "./Admin";
 import Dashboard, { ExploitBadges, ScanBanner, ScanStatus } from "./components/Dashboard";
 import Brand from "./components/Brand";
 import ThemeToggle from "./components/ThemeToggle";
+import AttackPanel from "./components/AttackPanel";
 import Settings from "./Settings";
 
 const SVCBG: Record<string, string> = {
@@ -92,8 +96,9 @@ function BrandNav({ username, onLogout, onSettings, maxW = "max-w-5xl" }: {
 }
 
 // ── Home screen (customer landing — search only, no upload) ─────────────────
-function Home({ hosts, loading, scan, trend, onSearch, username, onLogout, onSettings }: {
-  hosts: HostRecord[]; loading: boolean; scan: ScanStatus | null; trend: EstateSnapshot[]; onSearch: (q: string) => void;
+function Home({ hosts, loading, scan, trend, attack, onSearch, username, onLogout, onSettings }: {
+  hosts: HostRecord[]; loading: boolean; scan: ScanStatus | null; trend: EstateSnapshot[];
+  attack: EstateAttack | null; onSearch: (q: string) => void;
   username?: string; onLogout: () => void; onSettings: () => void;
 }) {
   const [q, setQ] = useState("");
@@ -155,7 +160,7 @@ function Home({ hosts, loading, scan, trend, onSearch, username, onLogout, onSet
               </div>
             </div>
           ) : (
-            <Dashboard hosts={hosts} onSearch={onSearch} scan={scan} trend={trend} />
+            <Dashboard hosts={hosts} onSearch={onSearch} scan={scan} trend={trend} attack={attack} />
           )}
         </div>
       </div>
@@ -612,6 +617,9 @@ function HostPage({ host, onBack, backLabel, onHome, onSearch }: {
             </div>
           </section>
           )}
+
+          {/* What an attacker could do with the findings above. */}
+          <AttackPanel host={host.ip} />
         </main>
       </div>
 
@@ -720,6 +728,7 @@ function CustomerApp() {
   const [hosts, setHosts] = useState<HostRecord[]>([]);
   const [scan, setScan] = useState<ScanStatus | null>(null);
   const [trend, setTrend] = useState<EstateSnapshot[]>([]);
+  const [attack, setAttack] = useState<EstateAttack | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -744,6 +753,12 @@ function CustomerApp() {
     fetchTrend()
       .then(points => { if (!cancelled) setTrend(points); })
       .catch(() => { /* the trend panel explains itself when empty */ });
+
+    // ATT&CK is derived server-side from the same findings, so it is a
+    // separate request rather than something the dashboard recomputes.
+    fetchAttack()
+      .then(res => { if (!cancelled) setAttack(res); })
+      .catch(() => { /* the panel is simply omitted */ });
 
     return () => { cancelled = true; };
   }, []);
@@ -825,7 +840,7 @@ function CustomerApp() {
   }
 
   return (
-    <Home hosts={hosts} loading={loading} scan={scan} trend={trend} onSearch={doSearch}
+    <Home hosts={hosts} loading={loading} scan={scan} trend={trend} attack={attack} onSearch={doSearch}
       username={user?.username} onLogout={logout} onSettings={() => go({ screen: "settings" })} />
   );
 }

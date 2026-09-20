@@ -1,9 +1,9 @@
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import {
   ShieldAlert, ShieldCheck, Bug, ServerCrash, Zap, ChevronLeft, CalendarCheck,
-  Repeat2, Wifi, FolderTree, TrendingDown, Server,
+  Repeat2, Wifi, FolderTree, TrendingDown, Server, Crosshair, Download, Loader2,
 } from "lucide-react";
-import { EstateSnapshot, HostRecord, Severity, Vuln } from "../api";
+import { EstateAttack, EstateSnapshot, HostRecord, Severity, Vuln, downloadAttackLayer } from "../api";
 import { faNum, faDate, timeAgo } from "../format";
 import { SEV_COLOR, SEV_FA, SEV_ORDER, sevRank, worstSeverity } from "./severity";
 import { hostsByWorstSeverity, topFamilies, topRepeatedFindings, topServices } from "./insights";
@@ -30,11 +30,12 @@ interface Finding { host: HostRecord; vuln: Vuln }
  * computed from the hosts the backend already scoped to this account, so the
  * dashboard needs no extra request and can never show another tenant's data.
  */
-export default function Dashboard({ hosts, onSearch, scan, trend }: {
+export default function Dashboard({ hosts, onSearch, scan, trend, attack }: {
   hosts: HostRecord[];
   onSearch: (q: string) => void;
   scan: ScanStatus | null;
   trend: EstateSnapshot[];
+  attack: EstateAttack | null;
 }) {
   const summary = useMemo(() => {
     const bySeverity = { Critical: 0, High: 0, Medium: 0, Low: 0, Info: 0 } as Record<Severity, number>;
@@ -242,6 +243,9 @@ export default function Dashboard({ hosts, onSearch, scan, trend }: {
         </div>
       )}
 
+      {/* ── what an attacker could do with all of it ── */}
+      {attack && attack.techniques.length > 0 && <AttackSummary attack={attack} />}
+
       {/* ── what the attack surface is made of, and what kind of problem it is ── */}
       <div className="grid md:grid-cols-2 gap-3">
         <Panel icon={<Wifi size={13} className="text-primary" />}
@@ -272,6 +276,68 @@ export default function Dashboard({ hosts, onSearch, scan, trend }: {
 }
 
 // ── shared bits ─────────────────────────────────────────────────────────────
+
+/**
+ * ATT&CK across the estate, ranked by how many hosts enable each technique —
+ * the number a defender prioritises on. Rows open the technique's page on
+ * attack.mitre.org, because "read what this is" is the useful next step here;
+ * the evidence for a specific host lives on that host's own page.
+ */
+function AttackSummary({ attack }: { attack: EstateAttack }) {
+  const [busy, setBusy] = useState(false);
+  const [failed, setFailed] = useState(false);
+
+  const rows = attack.techniques.slice(0, 8).map(t => ({
+    key: t.id,
+    label: `${t.id} ${t.name}`,
+    value: t.hosts,
+    ltr: true,
+    href: t.url,
+    // Rule-only mappings are our judgement; the tooltip says so rather than
+    // letting the row imply MITRE published it.
+    title: `${t.id} — ${t.name}\n`
+      + `روی ${faNum(t.hosts)} میزبان · ${faNum(t.findings)} یافته\n`
+      + `تاکتیک: ${t.tactics.join(" · ")}`
+      + (t.sources.length === 1 && t.sources[0] === "rule"
+        ? "\nنگاشت استنباطی افراکاو، نه نگاشت رسمی MITRE"
+        : ""),
+  }));
+
+  const download = async () => {
+    setBusy(true); setFailed(false);
+    try {
+      await downloadAttackLayer();
+    } catch {
+      setFailed(true);
+    } finally { setBusy(false); }
+  };
+
+  return (
+    <Panel icon={<Crosshair size={13} className="text-primary" />}
+           title="تکنیک‌های MITRE ATT&CK"
+           meta={`${faNum(attack.affectedHosts)} از ${faNum(attack.hosts)} میزبان`}>
+      <BarList data={rows} labelWidth="13rem" />
+
+      <div className="flex items-center gap-3 flex-wrap mt-3 pt-2.5 border-t border-border">
+        <p className="text-[11px] text-muted-foreground flex-1 min-w-[12rem]">
+          {faNum(attack.mappedFindings)} از {faNum(attack.totalFindings)} یافته نگاشت شد
+          {attack.unmappedFindings > 0 && <> · {faNum(attack.unmappedFindings)} یافته بدون تکنیک</>}
+        </p>
+        <button onClick={download} disabled={busy}
+          title="خروجی لایهٔ ATT&CK Navigator برای بارگذاری روی ماتریس خودتان"
+          className="flex items-center gap-1.5 text-[11px] text-muted-foreground hover:text-primary
+                     border border-border hover:border-primary/30 rounded px-2 py-1 transition-colors
+                     disabled:opacity-40">
+          {busy ? <Loader2 size={11} className="animate-spin" /> : <Download size={11} />}
+          خروجی Navigator
+        </button>
+      </div>
+      {failed && (
+        <p className="text-[11px] text-[#ff3b3b] mt-2">دریافت فایل لایه ناموفق بود.</p>
+      )}
+    </Panel>
+  );
+}
 
 /** Every chart panel on the dashboard has the same head, so it is one object
  *  rather than the same markup written out six times. */

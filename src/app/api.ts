@@ -70,6 +70,58 @@ export interface Scan {
   uploadedAt: string;
 }
 
+// ── MITRE ATT&CK ────────────────────────────────────────────────────────────
+// A .nessus file carries no ATT&CK data, so the backend derives it. Every
+// technique says where its mapping came from: "weakness" follows the
+// finding's own CWE, "rule" is Afrakav's own judgement about the plugin.
+
+export type AttackSource = "weakness" | "rule";
+
+export interface AttackFinding {
+  pluginId: string;
+  name: string;
+  cve?: string;
+  severity: Severity;
+}
+
+export interface AttackTechnique {
+  id: string;
+  name: string;
+  tactics: string[];
+  url: string;
+  sources: AttackSource[];
+  reasons: string[];
+  findings: AttackFinding[];
+}
+
+export interface HostAttack {
+  ip: string;
+  techniques: AttackTechnique[];
+  totalFindings: number;
+  mappedFindings: number;
+  unmappedFindings: number;
+}
+
+export interface EstateAttackTechnique {
+  id: string;
+  name: string;
+  tactics: string[];
+  url: string;
+  sources: AttackSource[];
+  hosts: number;
+  findings: number;
+}
+
+export interface EstateAttack {
+  techniques: EstateAttackTechnique[];
+  hosts: number;
+  affectedHosts: number;
+  totalFindings: number;
+  mappedFindings: number;
+  unmappedFindings: number;
+  catalogueSize: number;
+}
+
 /** One point on the customer's trend: the whole estate right after a scan. */
 export interface EstateSnapshot {
   takenAt: string;
@@ -382,6 +434,32 @@ export function fetchStats(customerId?: number): Promise<Stats> {
 
 export function fetchScans(customerId?: number): Promise<Scan[]> {
   return request<Scan[]>(`/api/scans${qs(customerId)}`);
+}
+
+export function fetchHostAttack(ip: string, customerId?: number): Promise<HostAttack> {
+  return request<HostAttack>(`/api/hosts/${encodeURIComponent(ip)}/attack${qs(customerId)}`);
+}
+
+export function fetchAttack(customerId?: number): Promise<EstateAttack> {
+  return request<EstateAttack>(`/api/attack${qs(customerId)}`);
+}
+
+// The layer endpoint needs the bearer token, so it cannot be a plain link —
+// fetch it and hand the browser a blob.
+export async function downloadAttackLayer(customerId?: number): Promise<void> {
+  const token = tokenStore.get();
+  const res = await fetch(`${API_BASE}/api/attack/navigator${qs(customerId)}`, {
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+  });
+  if (!res.ok) {
+    throw new ApiError("دریافت فایل لایهٔ ATT&CK با خطا مواجه شد", res.status);
+  }
+  const url = URL.createObjectURL(await res.blob());
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = "afrakav-attack-layer.json";
+  a.click();
+  URL.revokeObjectURL(url);
 }
 
 // Oldest first, so the trend plots left to right without re-sorting.
