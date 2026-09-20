@@ -281,11 +281,6 @@ function SearchResults({
                             <Zap size={8} /> اکسپلویت
                           </span>
                         )}
-                        {h.vulns.length === 0 && (
-                          <span className="flex items-center gap-1 text-[10px] font-bold px-1.5 py-0.5 bg-[#2ea043]/10 border border-[#2ea043]/25 text-[#2ea043] rounded">
-                            <ShieldCheck size={9} /> بدون آسیب‌پذیری
-                          </span>
-                        )}
                       </div>
                       <div className="flex flex-wrap gap-2 text-[12px] text-muted-foreground font-mono" dir="ltr">
                         {h.hostnames.map(n => <span key={n}>{n}</span>)}
@@ -300,7 +295,15 @@ function SearchResults({
                   <div className="flex flex-wrap items-center gap-x-4 gap-y-0.5 mb-3 text-[12px] text-muted-foreground">
                     <span className="flex items-center gap-1"><Building size={10} /><span dir="ltr">{h.org}</span></span>
                     <span className="flex items-center gap-1"><Cpu size={10} /><span dir="ltr">{h.os}</span></span>
-                    <span className="flex items-center gap-1"><Activity size={10} />{faNum(h.vulns.length)} یافته</span>
+                    {/* A bare "۰ یافته" reads like a missing number rather than
+                        a clean result, so a host with nothing on it says so. */}
+                    {h.vulns.length === 0 ? (
+                      <span className="flex items-center gap-1 text-[#2ea043]">
+                        <ShieldCheck size={10} /> آسیب‌پذیری یافت نشد
+                      </span>
+                    ) : (
+                      <span className="flex items-center gap-1"><Activity size={10} />{faNum(h.vulns.length)} یافته</span>
+                    )}
                   </div>
 
                   <div className="flex flex-wrap gap-1.5 mb-3">
