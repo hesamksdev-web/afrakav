@@ -1,17 +1,19 @@
 import { useMemo } from "react";
-import { ShieldAlert, Bug, ServerCrash, Zap, ChevronLeft } from "lucide-react";
+import { ShieldAlert, ShieldCheck, Bug, ServerCrash, Zap, ChevronLeft, CalendarCheck } from "lucide-react";
 import { HostRecord, Severity, Vuln } from "../api";
+import { faNum, faDate, timeAgo } from "../format";
+import { SEV_COLOR, SEV_ORDER, severityQuery } from "./severity";
+import SeverityChart from "./SeverityChart";
 import NetworkPanel from "./NetworkPanel";
 
-const faNum = (n: number) => n.toLocaleString("fa-IR");
-
-const SEV_FA: Record<Severity, string> = {
-  Critical: "بحرانی", High: "بالا", Medium: "متوسط", Low: "پایین", Info: "اطلاعاتی",
-};
-const SEV_COLOR: Record<Severity, string> = {
-  Critical: "#ff3b3b", High: "#ff8c00", Medium: "#f5c518", Low: "#2ea043", Info: "#6b7280",
-};
-const SEV_ORDER: Severity[] = ["Critical", "High", "Medium", "Low", "Info"];
+/** When the customer's network was last scanned, and how many scans there have
+ *  been. Deliberately not the newest scan's own host count: that file may
+ *  cover a slice of the estate, and printing it beside the total host tile
+ *  reads as a contradiction. */
+export interface ScanStatus {
+  at: string;
+  count: number;
+}
 
 // A finding paired with the host it was found on, so the dashboard can link
 // straight to that host.
@@ -22,9 +24,10 @@ interface Finding { host: HostRecord; vuln: Vuln }
  * computed from the hosts the backend already scoped to this account, so the
  * dashboard needs no extra request and can never show another tenant's data.
  */
-export default function Dashboard({ hosts, onSearch }: {
+export default function Dashboard({ hosts, onSearch, scan }: {
   hosts: HostRecord[];
   onSearch: (q: string) => void;
+  scan: ScanStatus | null;
 }) {
   const summary = useMemo(() => {
     const bySeverity = { Critical: 0, High: 0, Medium: 0, Low: 0, Info: 0 } as Record<Severity, number>;
@@ -71,6 +74,11 @@ export default function Dashboard({ hosts, onSearch }: {
 
   return (
     <div className="space-y-3">
+      {/* ── proof the scan actually ran ──
+          This stays at the top whether or not anything was found: a customer
+          with a clean network needs to see that the network was looked at. */}
+      <ScanBanner scan={scan} />
+
       {/* ── headline counters ── */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
         <Stat label="میزبان‌های اسکن‌شده" value={faNum(hosts.length)} onClick={() => onSearch("*")} />
@@ -83,30 +91,31 @@ export default function Dashboard({ hosts, onSearch }: {
       </div>
 
       {/* ── severity spread ── */}
-      {totalFindings > 0 && (
-        <div className="bg-card border border-border rounded p-4">
-          <div className="flex items-center gap-2 mb-3">
-            <Bug size={13} className="text-primary" />
-            <span className="text-xs font-semibold text-foreground">توزیع شدت آسیب‌پذیری‌ها</span>
+      <div className="bg-card border border-border rounded p-4">
+        <div className="flex items-center gap-2 mb-3">
+          <Bug size={13} className="text-primary" />
+          <span className="text-xs font-semibold text-foreground">توزیع شدت آسیب‌پذیری‌ها</span>
+          {totalFindings > 0 && (
             <span className="ms-auto text-[11px] text-muted-foreground">{faNum(totalFindings)} یافته</span>
-          </div>
-          <div className="h-2 rounded-sm overflow-hidden flex bg-secondary mb-3" dir="ltr">
-            {SEV_ORDER.map(s => summary.bySeverity[s] > 0 && (
-              <div key={s} title={`${SEV_FA[s]}: ${faNum(summary.bySeverity[s])}`}
-                   style={{ width: `${(summary.bySeverity[s] / totalFindings) * 100}%`, background: SEV_COLOR[s] }} />
-            ))}
-          </div>
-          <div className="flex flex-wrap gap-x-4 gap-y-1.5">
-            {SEV_ORDER.map(s => (
-              <span key={s} className="flex items-center gap-1.5 text-[12px] text-muted-foreground">
-                <span className="w-2 h-2 rounded-sm flex-shrink-0" style={{ background: SEV_COLOR[s] }} />
-                {SEV_FA[s]}
-                <span className="font-mono text-foreground tabular-nums">{faNum(summary.bySeverity[s])}</span>
-              </span>
-            ))}
-          </div>
+          )}
         </div>
-      )}
+
+        {totalFindings === 0 ? (
+          <div className="flex items-start gap-2.5 text-[12px] text-muted-foreground leading-relaxed">
+            <ShieldCheck size={14} className="text-[#2ea043] flex-shrink-0 mt-0.5" />
+            <p>
+              هیچ آسیب‌پذیری‌ای روی میزبان‌های شما ثبت نشده است. اسکن انجام شده و
+              {" "}{faNum(hosts.length)} میزبان بررسی شده‌اند.
+            </p>
+          </div>
+        ) : (
+          <SeverityChart
+            counts={summary.bySeverity}
+            total={totalFindings}
+            onSelect={s => onSearch(severityQuery(s))}
+          />
+        )}
+      </div>
 
       {/* ── findings with a published exploit ── */}
       <div className="bg-card border border-border rounded overflow-hidden">
@@ -199,6 +208,30 @@ export default function Dashboard({ hosts, onSearch }: {
 }
 
 // ── shared bits ─────────────────────────────────────────────────────────────
+
+/**
+ * States plainly when the network was last scanned. An empty findings list is
+ * ambiguous on its own — it reads the same whether the network is clean or
+ * nothing ever ran — so the date is what turns "no vulnerabilities" into
+ * something the customer can trust.
+ */
+export function ScanBanner({ scan }: { scan: ScanStatus | null }) {
+  if (!scan) return null;
+  return (
+    <div className="bg-card border border-border rounded px-4 py-3 flex items-center gap-3">
+      <CalendarCheck size={15} className="text-primary flex-shrink-0" />
+      <div className="min-w-0">
+        <p className="text-xs text-foreground">
+          آخرین اسکن شبکهٔ شما: <span className="font-semibold">{faDate(scan.at)}</span>
+          <span className="text-muted-foreground"> — {timeAgo(scan.at)}</span>
+        </p>
+        <p className="text-[11px] text-muted-foreground mt-0.5">
+          تاکنون {faNum(scan.count)} اسکن برای شبکهٔ شما انجام شده است.
+        </p>
+      </div>
+    </div>
+  );
+}
 
 export function ExploitBadges({ vuln }: { vuln: Vuln }) {
   if (!vuln.exploitAvailable && !vuln.exploitedByMalware) return null;

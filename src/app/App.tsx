@@ -1,21 +1,19 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import {
   Search, AlertTriangle, X,
-  ChevronDown, ChevronUp, CheckCircle,
+  ChevronDown, ChevronUp, CheckCircle, ShieldCheck,
   Cpu, Wifi, ExternalLink, Tag, Activity,
   Building, LogOut, Loader2, Zap, ArrowRight, LayoutDashboard, SlidersHorizontal,
 } from "lucide-react";
-import { fetchHosts, safeHref, HostRecord, Severity } from "./api";
+import { fetchHosts, fetchScans, safeHref, HostRecord, Severity } from "./api";
 import { AuthProvider, useAuth } from "./auth";
+import { faNum, timeAgo } from "./format";
 import Login from "./Login";
 import Admin from "./Admin";
-import Dashboard, { ExploitBadges } from "./components/Dashboard";
+import Dashboard, { ExploitBadges, ScanBanner, ScanStatus } from "./components/Dashboard";
 import Brand from "./components/Brand";
 import ThemeToggle from "./components/ThemeToggle";
 import Settings from "./Settings";
-
-// ── Helpers ────────────────────────────────────────────────────────────────
-const faNum = (n: number) => n.toLocaleString("fa-IR");
 
 const SVCBG: Record<string, string> = {
   http: "text-blue-400", https: "text-cyan-400", "http-alt": "text-blue-400",
@@ -54,17 +52,17 @@ function SevBadge({ s }: { s: Sev }) {
   );
 }
 
-function timeAgo(iso: string) {
-  const diff = new Date("2026-07-11T00:00:00Z").getTime() - new Date(iso).getTime();
-  const h = Math.round(diff / 3600000);
-  return h < 24 ? `${faNum(h)} ساعت پیش` : `${faNum(Math.round(h / 24))} روز پیش`;
-}
-
 // ── Brand nav (shared) ─────────────────────────────────────────────────────
 /** 10.20.30.11 → 10.20.30.0/24; anything that is not a dotted quad is passed through. */
 function subnetLabel(ip: string) {
   const parts = ip.split(".");
   return parts.length === 4 ? `${parts.slice(0, 3).join(".")}.0/24` : ip;
+}
+
+/** Whether a failed search was someone looking up an address, so the empty
+ *  state can say something specific instead of a generic "not found". */
+function looksLikeIp(q: string) {
+  return /^\d{1,3}(\.\d{1,3}){1,3}$/.test(q.trim());
 }
 
 function BrandNav({ username, onLogout, onSettings, maxW = "max-w-5xl" }: {
@@ -94,8 +92,8 @@ function BrandNav({ username, onLogout, onSettings, maxW = "max-w-5xl" }: {
 }
 
 // ── Home screen (customer landing — search only, no upload) ─────────────────
-function Home({ hosts, loading, onSearch, username, onLogout, onSettings }: {
-  hosts: HostRecord[]; loading: boolean; onSearch: (q: string) => void;
+function Home({ hosts, loading, scan, onSearch, username, onLogout, onSettings }: {
+  hosts: HostRecord[]; loading: boolean; scan: ScanStatus | null; onSearch: (q: string) => void;
   username?: string; onLogout: () => void; onSettings: () => void;
 }) {
   const [q, setQ] = useState("");
@@ -145,11 +143,19 @@ function Home({ hosts, loading, onSearch, username, onLogout, onSettings }: {
               <Loader2 size={18} className="animate-spin" />
             </div>
           ) : hosts.length === 0 ? (
-            <div className="border border-border rounded bg-card py-8 text-center text-xs text-muted-foreground">
-              هنوز اسکنی برای حساب شما بارگذاری نشده است. لطفاً با تیم افرانت تماس بگیرید.
+            /* No hosts can mean two different things, and the scan record is
+               what separates them: a scan that ran and found nothing, or no
+               scan yet. */
+            <div className="space-y-3">
+              <ScanBanner scan={scan} />
+              <div className="border border-border rounded bg-card py-8 px-4 text-center text-xs text-muted-foreground">
+                {scan
+                  ? "اسکن انجام شده است، اما میزبانی در محدودهٔ اسکن پاسخ نداد. برای بازبینی محدوده با تیم افرانت تماس بگیرید."
+                  : "هنوز اسکنی برای حساب شما بارگذاری نشده است. لطفاً با تیم افرانت تماس بگیرید."}
+              </div>
             </div>
           ) : (
-            <Dashboard hosts={hosts} onSearch={onSearch} />
+            <Dashboard hosts={hosts} onSearch={onSearch} scan={scan} />
           )}
         </div>
       </div>
@@ -163,12 +169,16 @@ function Home({ hosts, loading, onSearch, username, onLogout, onSettings }: {
 
 // ── Search results page (when query doesn't exactly match one IP) ──────────
 function SearchResults({
-  query, results, onSelect, onSearch, onHome,
+  query, results, onSelect, onSearch, onHome, onBack,
 }: {
   query: string; results: HostRecord[]; onSelect: (h: HostRecord) => void;
-  onSearch: (q: string) => void; onHome: () => void;
+  onSearch: (q: string) => void; onHome: () => void; onBack: () => void;
 }) {
   const [q, setQ] = useState(query);
+  // The search box follows whatever query the screen is showing, so stepping
+  // back through history never leaves a stale term in the field.
+  useEffect(() => { setQ(query); }, [query]);
+
   return (
     <div className="min-h-screen bg-background flex flex-col">
       {/* Top bar */}
@@ -177,9 +187,13 @@ function SearchResults({
           <button onClick={onHome} title="بازگشت به داشبورد" className="flex items-center gap-1.5 flex-shrink-0">
             <Brand className="h-7" />
           </button>
-          <button onClick={onHome}
+          <button onClick={onBack} title="بازگشت به صفحهٔ قبل"
             className="flex items-center gap-1.5 flex-shrink-0 text-xs text-muted-foreground hover:text-primary border border-border hover:border-primary/30 rounded px-2 py-1.5 transition-colors">
-            <LayoutDashboard size={12} /> <span className="hidden sm:block">داشبورد</span>
+            <ArrowRight size={12} /> <span className="hidden sm:block">بازگشت</span>
+          </button>
+          <button onClick={onHome} title="داشبورد"
+            className="flex items-center gap-1.5 flex-shrink-0 text-xs text-muted-foreground hover:text-primary border border-border hover:border-primary/30 rounded px-2 py-1.5 transition-colors">
+            <LayoutDashboard size={12} /> <span className="hidden lg:block">داشبورد</span>
           </button>
           <form className="flex-1 flex items-center bg-secondary border border-border rounded overflow-hidden focus-within:border-primary/40 transition-colors max-w-2xl" onSubmit={e => { e.preventDefault(); onSearch(q); }}>
             <span className="px-3 text-muted-foreground flex-shrink-0"><Search size={13} /></span>
@@ -232,11 +246,20 @@ function SearchResults({
         {/* Results list */}
         <div className="flex-1 min-w-0 space-y-3">
           {results.length === 0 ? (
-            <div className="flex flex-col items-center justify-center py-20 text-center">
+            <div className="flex flex-col items-center justify-center py-20 text-center px-4">
               <Search size={36} className="text-muted-foreground mb-4 opacity-20" />
-              <p className="text-sm text-foreground mb-1">نتیجه‌ای برای «<span dir="ltr" className="font-mono">{query}</span>» یافت نشد</p>
-              <p className="text-xs text-muted-foreground">این IP یا میزبان در اسکن بارگذاری‌شده وجود ندارد</p>
-              <button onClick={onHome} className="mt-4 text-xs text-primary hover:underline">بازگشت به داشبورد</button>
+              <p className="text-sm text-foreground mb-1.5">
+                نتیجه‌ای برای «<span dir="ltr" className="font-mono">{query}</span>» یافت نشد
+              </p>
+              <p className="text-xs text-muted-foreground leading-relaxed max-w-md">
+                {looksLikeIp(query)
+                  ? "این نشانی جزو میزبان‌های اسکن‌شدهٔ شما نیست. اگر باید در محدودهٔ پایش باشد، با تیم افرانت تماس بگیرید."
+                  : "هیچ میزبان، پورت، سرویس یا CVE مطابق این عبارت در اسکن‌های شما ثبت نشده است."}
+              </p>
+              <div className="flex items-center gap-4 mt-4">
+                <button onClick={onBack} className="text-xs text-primary hover:underline">بازگشت</button>
+                <button onClick={onHome} className="text-xs text-muted-foreground hover:text-primary">داشبورد</button>
+              </div>
             </div>
           ) : (
             results.map(h => {
@@ -256,6 +279,11 @@ function SearchResults({
                         {h.vulns.some(v => v.exploitAvailable) && (
                           <span className="flex items-center gap-1 text-[10px] font-bold px-1.5 py-0.5 bg-[#ff3b3b]/10 border border-[#ff3b3b]/25 text-[#ff3b3b] rounded">
                             <Zap size={8} /> اکسپلویت
+                          </span>
+                        )}
+                        {h.vulns.length === 0 && (
+                          <span className="flex items-center gap-1 text-[10px] font-bold px-1.5 py-0.5 bg-[#2ea043]/10 border border-[#2ea043]/25 text-[#2ea043] rounded">
+                            <ShieldCheck size={9} /> بدون آسیب‌پذیری
                           </span>
                         )}
                       </div>
@@ -321,6 +349,12 @@ function HostPage({ host, onBack, backLabel, onHome, onSearch }: {
     : host.vulns.filter(v => v.severity === vulnFilter);
   const exploitCount = host.vulns.filter(v => v.exploitAvailable).length;
   const sevCounts = (["Critical", "High", "Medium", "Low", "Info"] as Sev[]).map(s => ({ s, count: host.vulns.filter(v => v.severity === s).length }));
+  const hasVulns = host.vulns.length > 0;
+
+  // Moving between hosts (or stepping back through history) reuses this
+  // component, so the search box and the filter have to follow the new host
+  // rather than keeping the previous one's state.
+  useEffect(() => { setQ(host.ip); setVulnFilter("All"); setOpenPort(null); }, [host.ip]);
 
   return (
     <div className="min-h-screen bg-background flex flex-col">
@@ -383,6 +417,12 @@ function HostPage({ host, onBack, backLabel, onHome, onSearch }: {
           {/* Vuln summary */}
           <div className="bg-card border border-border rounded p-4">
             <p className="text-[11px] text-muted-foreground mb-3">آسیب‌پذیری‌ها</p>
+            {!hasVulns && (
+              <p className="flex items-start gap-1.5 text-[12px] text-[#2ea043] leading-relaxed">
+                <ShieldCheck size={12} className="flex-shrink-0 mt-0.5" />
+                موردی یافت نشد
+              </p>
+            )}
             <div className="space-y-1.5">
               {sevCounts.map(({ s, count }) => count > 0 && (
                 <button
@@ -407,6 +447,11 @@ function HostPage({ host, onBack, backLabel, onHome, onSearch }: {
             {host.vulns.filter(v => v.severity === "Critical").length > 0 && (
               <span className="text-xs font-bold px-2 py-0.5 bg-[#ff3b3b]/10 border border-[#ff3b3b]/30 text-[#ff3b3b] rounded">
                 {faNum(host.vulns.filter(v => v.severity === "Critical").length)} آسیب‌پذیری بحرانی
+              </span>
+            )}
+            {!hasVulns && (
+              <span className="flex items-center gap-1 text-xs font-bold px-2 py-0.5 bg-[#2ea043]/10 border border-[#2ea043]/30 text-[#2ea043] rounded">
+                <ShieldCheck size={11} /> بدون آسیب‌پذیری
               </span>
             )}
           </div>
@@ -457,7 +502,27 @@ function HostPage({ host, onBack, backLabel, onHome, onSearch }: {
             })}
           </section>
 
-          {/* ── Vulnerabilities ── */}
+          {/* ── Vulnerabilities ──
+              A host with nothing on it gets a statement, not an empty list:
+              "no findings" and "not scanned" look identical otherwise. */}
+          {!hasVulns ? (
+            <section className="bg-card border border-[#2ea043]/30 rounded overflow-hidden">
+              <div className="px-4 py-3 border-b border-[#2ea043]/20 bg-[#2ea043]/5 flex items-center gap-2">
+                <ShieldCheck size={13} className="text-[#2ea043]" />
+                <span className="text-xs font-semibold text-foreground">آسیب‌پذیری‌ها</span>
+              </div>
+              <div className="px-4 py-9 text-center">
+                <ShieldCheck size={30} className="text-[#2ea043] mx-auto mb-3" />
+                <p className="text-sm text-foreground mb-2">
+                  هیچ آسیب‌پذیری‌ای روی این نشانی یافت نشد
+                </p>
+                <p className="text-[12px] text-muted-foreground leading-relaxed max-w-lg mx-auto">
+                  این میزبان {timeAgo(host.lastScan)} اسکن شد و {faNum(host.ports.length)} سرویس باز روی آن
+                  شناسایی شد، اما هیچ یافتهٔ آسیب‌پذیری‌ای ثبت نشده است.
+                </p>
+              </div>
+            </section>
+          ) : (
           <section className="bg-card border border-border rounded overflow-hidden">
             <div className="px-4 py-3 border-b border-border bg-secondary/20 flex items-center justify-between gap-3 flex-wrap">
               <div className="flex items-center gap-2">
@@ -536,11 +601,14 @@ function HostPage({ host, onBack, backLabel, onHome, onSearch }: {
               ))}
               {filteredVulns.length === 0 && (
                 <div className="px-4 py-8 text-center text-xs text-muted-foreground">
-                  {vulnFilter === "All" ? "آسیب‌پذیری‌ای یافت نشد" : `آسیب‌پذیری با شدت «${SEV_FA[vulnFilter]}» یافت نشد`}
+                  {vulnFilter === "All" ? "آسیب‌پذیری‌ای یافت نشد"
+                    : vulnFilter === "Exploit" ? "یافته‌ای با اکسپلویت منتشرشده روی این میزبان وجود ندارد"
+                    : `آسیب‌پذیری با شدت «${SEV_FA[vulnFilter]}» روی این میزبان وجود ندارد`}
                 </div>
               )}
             </div>
           </section>
+          )}
         </main>
       </div>
 
@@ -552,132 +620,200 @@ function HostPage({ host, onBack, backLabel, onHome, onSearch }: {
 }
 
 // ── Customer app (search dashboard, scoped to the logged-in tenant) ─────────
+
+/**
+ * Which screen the customer is on. The entire view is derived from this one
+ * value, and every navigation pushes it onto the browser's history stack — so
+ * the browser's back button and a phone's back gesture step back through the
+ * panel instead of leaving it.
+ */
+type View =
+  | { screen: "home" }
+  | { screen: "results"; query: string }
+  | { screen: "host"; ip: string; from: "home" | "results" }
+  | { screen: "settings" };
+
+/**
+ * Shodan-style filtering over the hosts this account already holds. Pure, so a
+ * screen restored from history can recompute its own results instead of
+ * needing them stored alongside it.
+ */
+function filterHosts(hosts: HostRecord[], q: string): HostRecord[] {
+  const lower = q.toLowerCase().trim();
+  if (!lower) return hosts;
+
+  return hosts.filter(h => {
+    if (lower.startsWith("port:")) {
+      const port = parseInt(lower.split(":")[1]);
+      return h.ports.some(p => p.port === port);
+    }
+    if (lower.startsWith("tag:")) {
+      return h.tags.includes(lower.split(":")[1]);
+    }
+    if (lower.startsWith("vuln:") || lower.startsWith("cve:")) {
+      const cve = lower.split(":")[1].toUpperCase();
+      return h.vulns.some(v => v.cve.toUpperCase().includes(cve));
+    }
+    // severity:critical — what the dashboard chart narrows to when a bar is
+    // clicked.
+    if (lower.startsWith("severity:") || lower.startsWith("sev:")) {
+      const want = lower.split(":")[1];
+      return h.vulns.some(v => v.severity.toLowerCase() === want);
+    }
+    if (lower.startsWith("product:")) {
+      const prod = lower.split(":")[1];
+      return h.ports.some(p => p.product.toLowerCase().includes(prod));
+    }
+    if (lower.startsWith("os:")) {
+      return h.os.toLowerCase().includes(lower.slice(3));
+    }
+    // subnet:10.20.30 matches 10.20.30.* and nothing wider.
+    if (lower.startsWith("subnet:") || lower.startsWith("net:")) {
+      const prefix = lower.split(":")[1].replace(/\.$/, "");
+      return h.ip.startsWith(prefix + ".");
+    }
+    if (lower.startsWith("has:") || lower.startsWith("exploit:")) {
+      const [key, val] = lower.split(":");
+      if (key === "exploit") {
+        const want = val === "true" || val === "yes" || val === "1";
+        return h.vulns.some(v => v.exploitAvailable) === want;
+      }
+      if (val === "exploit") return h.vulns.some(v => v.exploitAvailable);
+      if (val === "malware") return h.vulns.some(v => v.exploitedByMalware);
+      if (val === "critical") return h.vulns.some(v => v.severity === "Critical");
+      return false;
+    }
+    if (lower === "*") return true;
+    return (
+      h.ip.includes(lower) ||
+      h.hostnames.some(n => n.toLowerCase().includes(lower)) ||
+      h.domains.some(d => d.includes(lower)) ||
+      h.os.toLowerCase().includes(lower) ||
+      h.org.toLowerCase().includes(lower) ||
+      h.tags.some(t => t.includes(lower)) ||
+      h.ports.some(p => String(p.port) === lower || p.service.includes(lower) || p.product.toLowerCase().includes(lower)) ||
+      h.vulns.some(v => v.cve.toLowerCase().includes(lower) || v.name.toLowerCase().includes(lower))
+    );
+  });
+}
+
+function FullScreen({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="min-h-screen bg-background flex items-center justify-center text-muted-foreground">
+      {children}
+    </div>
+  );
+}
+
 function CustomerApp() {
   const { user, logout } = useAuth();
-  const [screen, setScreen] = useState<"home" | "results" | "host" | "settings">("home");
-  const [query, setQuery] = useState("");
-  const [results, setResults] = useState<HostRecord[]>([]);
-  const [selectedHost, setSelectedHost] = useState<HostRecord | null>(null);
-  // Where the host page should return to. Opening a host straight from the
-  // dashboard used to land the visitor on a results list they never asked for.
-  const [hostOrigin, setHostOrigin] = useState<"home" | "results">("home");
+  const [view, setView] = useState<View>({ screen: "home" });
   // `hosts` holds ONLY this customer's hosts — the backend scopes the response
   // by the authenticated user, so a tenant can never see another's IPs.
   const [hosts, setHosts] = useState<HostRecord[]>([]);
+  const [scan, setScan] = useState<ScanStatus | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     let cancelled = false;
+
     fetchHosts()
       .then(remote => { if (!cancelled) setHosts(remote as HostRecord[]); })
       .catch(() => { /* empty state */ })
       .finally(() => { if (!cancelled) setLoading(false); });
+
+    // The scan record is separate evidence from the findings: it says a scan
+    // ran, which is the one thing an empty findings list cannot say for itself.
+    fetchScans()
+      .then(list => {
+        if (cancelled || list.length === 0) return;
+        setScan({ at: list[0].uploadedAt, count: list.length });
+      })
+      .catch(() => { /* the panel just omits the scan line */ });
+
     return () => { cancelled = true; };
   }, []);
 
-  const doSearch = (q: string) => {
-    if (!q.trim()) { setScreen("home"); return; }
-    const lower = q.toLowerCase().trim();
+  // Back and forward move between the screens the customer actually visited.
+  useEffect(() => {
+    window.history.replaceState({ afrakav: { screen: "home" } as View }, "");
+    const onPop = (e: PopStateEvent) => {
+      const restored = (e.state as { afrakav?: View } | null)?.afrakav;
+      setView(restored ?? { screen: "home" });
+    };
+    window.addEventListener("popstate", onPop);
+    return () => window.removeEventListener("popstate", onPop);
+  }, []);
 
-    // Exact IP match → go straight to host page
-    const exact = hosts.find(h => h.ip === lower);
+  const go = (next: View) => {
+    setView(next);
+    window.history.pushState({ afrakav: next }, "");
+  };
+  // In-page back and the browser's own back do the same thing, so the two can
+  // never disagree about where "previous" is.
+  const back = () => window.history.back();
+  const home = () => go({ screen: "home" });
+
+  const results = useMemo(
+    () => (view.screen === "results" ? filterHosts(hosts, view.query) : []),
+    [hosts, view],
+  );
+
+  const doSearch = (q: string) => {
+    const query = q.trim();
+    if (!query) { home(); return; }
+
+    // An exact IP opens that host directly rather than a one-row result list.
+    const exact = hosts.find(h => h.ip === query.toLowerCase());
     if (exact) {
-      setSelectedHost(exact);
-      setHostOrigin(screen === "results" ? "results" : "home");
-      setScreen("host");
-      setQuery(q);
+      go({ screen: "host", ip: exact.ip, from: view.screen === "results" ? "results" : "home" });
       return;
     }
-
-    // Filter scan data
-    const found = hosts.filter(h => {
-      if (lower.startsWith("port:")) {
-        const port = parseInt(lower.split(":")[1]);
-        return h.ports.some(p => p.port === port);
-      }
-      if (lower.startsWith("tag:")) {
-        return h.tags.includes(lower.split(":")[1]);
-      }
-      if (lower.startsWith("vuln:") || lower.startsWith("cve:")) {
-        const cve = lower.split(":")[1].toUpperCase();
-        return h.vulns.some(v => v.cve.toUpperCase().includes(cve));
-      }
-      if (lower.startsWith("product:")) {
-        const prod = lower.split(":")[1];
-        return h.ports.some(p => p.product.toLowerCase().includes(prod));
-      }
-      if (lower.startsWith("os:")) {
-        return h.os.toLowerCase().includes(lower.slice(3));
-      }
-      // subnet:10.20.30 matches 10.20.30.* and nothing wider.
-      if (lower.startsWith("subnet:") || lower.startsWith("net:")) {
-        const prefix = lower.split(":")[1].replace(/\.$/, "");
-        return h.ip.startsWith(prefix + ".");
-      }
-      if (lower.startsWith("has:") || lower.startsWith("exploit:")) {
-        const [key, val] = lower.split(":");
-        if (key === "exploit") {
-          const want = val === "true" || val === "yes" || val === "1";
-          return h.vulns.some(v => v.exploitAvailable) === want;
-        }
-        if (val === "exploit") return h.vulns.some(v => v.exploitAvailable);
-        if (val === "malware") return h.vulns.some(v => v.exploitedByMalware);
-        if (val === "critical") return h.vulns.some(v => v.severity === "Critical");
-        return false;
-      }
-      if (lower === "*") return true;
-      return (
-        h.ip.includes(lower) ||
-        h.hostnames.some(n => n.toLowerCase().includes(lower)) ||
-        h.domains.some(d => d.includes(lower)) ||
-        h.os.toLowerCase().includes(lower) ||
-        h.org.toLowerCase().includes(lower) ||
-        h.tags.some(t => t.includes(lower)) ||
-        h.ports.some(p => String(p.port) === lower || p.service.includes(lower) || p.product.toLowerCase().includes(lower)) ||
-        h.vulns.some(v => v.cve.toLowerCase().includes(lower) || v.name.toLowerCase().includes(lower))
-      );
-    });
-
-    setQuery(q);
-    setResults(found);
-    setScreen("results");
+    go({ screen: "results", query });
   };
 
-  const selectHost = (h: HostRecord) => {
-    setSelectedHost(h);
-    setQuery(h.ip);
-    setHostOrigin("results");
-    setScreen("host");
-  };
+  const selectHost = (h: HostRecord) => go({ screen: "host", ip: h.ip, from: "results" });
 
-  if (screen === "settings") return <Settings onBack={() => setScreen("home")} />;
+  if (view.screen === "settings") return <Settings onBack={back} />;
 
-  if (screen === "home") return (
-    <Home hosts={hosts} loading={loading} onSearch={doSearch}
-      username={user?.username} onLogout={logout} onSettings={() => setScreen("settings")} />
-  );
-
-  if (screen === "results") return (
+  if (view.screen === "results") return (
     <SearchResults
-      query={query}
-      results={results.length > 0 ? results : hosts}
+      query={view.query}
+      results={results}
       onSelect={selectHost}
       onSearch={doSearch}
-      onHome={() => setScreen("home")}
+      onHome={home}
+      onBack={back}
     />
   );
 
-  if (screen === "host" && selectedHost) return (
-    <HostPage
-      host={selectedHost}
-      onBack={() => setScreen(hostOrigin)}
-      backLabel={hostOrigin === "results" ? "بازگشت به نتایج" : "بازگشت به داشبورد"}
-      onHome={() => setScreen("home")}
-      onSearch={doSearch}
-    />
-  );
+  if (view.screen === "host") {
+    const host = hosts.find(h => h.ip === view.ip);
+    if (host) return (
+      <HostPage
+        host={host}
+        onBack={back}
+        backLabel={view.from === "results" ? "بازگشت به نتایج" : "بازگشت به داشبورد"}
+        onHome={home}
+        onSearch={doSearch}
+      />
+    );
+    // Stepping back into a host before the list has loaded.
+    if (loading) return <FullScreen><Loader2 size={22} className="animate-spin" /></FullScreen>;
+    // The address is no longer in this account's scans — say so rather than
+    // showing a blank screen.
+    return (
+      <SearchResults
+        query={view.ip} results={[]} onSelect={selectHost}
+        onSearch={doSearch} onHome={home} onBack={back}
+      />
+    );
+  }
 
-  return null;
+  return (
+    <Home hosts={hosts} loading={loading} scan={scan} onSearch={doSearch}
+      username={user?.username} onLogout={logout} onSettings={() => go({ screen: "settings" })} />
+  );
 }
 
 // ── Root: auth gate → Login / Admin / Customer ──────────────────────────────

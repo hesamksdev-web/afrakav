@@ -126,6 +126,15 @@ func matches(h Host, q string) bool {
 				}
 			}
 			return false
+		case "severity", "sev":
+			// severity:critical — the filter the dashboard's severity chart
+			// applies when one of its bars is clicked.
+			for _, v := range h.Vulns {
+				if strings.ToLower(string(v.Severity)) == val {
+					return true
+				}
+			}
+			return false
 		case "product":
 			for _, p := range h.Ports {
 				if strings.Contains(strings.ToLower(p.Product), val) {

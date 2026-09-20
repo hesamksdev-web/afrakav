@@ -175,10 +175,11 @@ Admin only:
 | GET    | `/api/admin/events`      | full security event log, filterable by action/outcome/actor/customer/time |
 
 **Search grammar:** `port:445`, `tag:rdp`, `vuln:CVE-2021-44228`, `cve:…`,
-`product:jenkins`, `os:windows`, `subnet:10.20.30` (a /24, `net:` also works),
-`has:exploit`, `has:malware`, `has:critical`, `exploit:true|false`, `*` for
-everything, or a bare term matching IP / hostname / domain / OS / org / port /
-service / CVE / plugin name.
+`severity:critical` (`sev:` also works — what the dashboard's severity chart
+applies when a bar is clicked), `product:jenkins`, `os:windows`,
+`subnet:10.20.30` (a /24, `net:` also works), `has:exploit`, `has:malware`,
+`has:critical`, `exploit:true|false`, `*` for everything, or a bare term
+matching IP / hostname / domain / OS / org / port / service / CVE / plugin name.
 
 **Exploit intelligence:** the parser reads `exploit_available`,
 `exploited_by_malware`, `exploitability_ease` and the framework tags
