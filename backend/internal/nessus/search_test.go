@@ -9,7 +9,7 @@ func hostFixture() []Host {
 			OS:    "Windows Server 2019",
 			Ports: []Port{{Port: 445, Proto: "tcp", Service: "cifs"}},
 			Vulns: []Vuln{{
-				CVE: "CVE-2017-0144", Severity: SeverityCritical,
+				CVE: "CVE-2017-0144", Severity: SeverityCritical, Family: "Windows",
 				ExploitAvailable: true, ExploitedByMalware: true,
 				ExploitFrameworks: []string{"Metasploit: MS17-010 EternalBlue"},
 			}},
@@ -18,7 +18,7 @@ func hostFixture() []Host {
 			IP:    "10.20.31.5",
 			OS:    "Ubuntu 22.04",
 			Ports: []Port{{Port: 22, Proto: "tcp", Service: "ssh"}},
-			Vulns: []Vuln{{CVE: "CVE-2023-0001", Severity: SeverityMedium}},
+			Vulns: []Vuln{{CVE: "CVE-2023-0001", Severity: SeverityMedium, Family: "Web Servers"}},
 		},
 	}
 }
@@ -60,6 +60,30 @@ func TestSeverityFilter(t *testing.T) {
 		"sev:critical":      {"10.20.30.11"},
 		"severity:high":     {}, // no host carries a High finding
 		"severity:":         {}, // a bare filter matches nothing, not everything
+	}
+
+	for query, want := range cases {
+		got := SearchHosts(hosts, query)
+		if len(got) != len(want) {
+			t.Errorf("%q returned %d hosts, want %d", query, len(got), len(want))
+			continue
+		}
+		for i, ip := range want {
+			if got[i].IP != ip {
+				t.Errorf("%q result %d = %s, want %s", query, i, got[i].IP, ip)
+			}
+		}
+	}
+}
+
+func TestFamilyFilter(t *testing.T) {
+	hosts := hostFixture()
+
+	cases := map[string][]string{
+		"family:windows":     {"10.20.30.11"},
+		"family:web servers": {"10.20.31.5"},
+		"family:web":         {"10.20.31.5"}, // substring, families are wordy
+		"family:database":    {},
 	}
 
 	for query, want := range cases {

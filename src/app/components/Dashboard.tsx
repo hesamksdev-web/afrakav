@@ -1,9 +1,15 @@
 import { useMemo } from "react";
-import { ShieldAlert, ShieldCheck, Bug, ServerCrash, Zap, ChevronLeft, CalendarCheck } from "lucide-react";
-import { HostRecord, Severity, Vuln } from "../api";
+import {
+  ShieldAlert, ShieldCheck, Bug, ServerCrash, Zap, ChevronLeft, CalendarCheck,
+  Repeat2, Wifi, FolderTree, TrendingDown, Server,
+} from "lucide-react";
+import { EstateSnapshot, HostRecord, Severity, Vuln } from "../api";
 import { faNum, faDate, timeAgo } from "../format";
-import { SEV_COLOR, SEV_ORDER, severityQuery } from "./severity";
+import { SEV_COLOR, SEV_FA, SEV_ORDER, sevRank, worstSeverity } from "./severity";
+import { hostsByWorstSeverity, topFamilies, topRepeatedFindings, topServices } from "./insights";
+import BarList from "./BarList";
 import SeverityChart from "./SeverityChart";
+import TrendChart from "./TrendChart";
 import NetworkPanel from "./NetworkPanel";
 
 /** When the customer's network was last scanned, and how many scans there have
@@ -24,10 +30,11 @@ interface Finding { host: HostRecord; vuln: Vuln }
  * computed from the hosts the backend already scoped to this account, so the
  * dashboard needs no extra request and can never show another tenant's data.
  */
-export default function Dashboard({ hosts, onSearch, scan }: {
+export default function Dashboard({ hosts, onSearch, scan, trend }: {
   hosts: HostRecord[];
   onSearch: (q: string) => void;
   scan: ScanStatus | null;
+  trend: EstateSnapshot[];
 }) {
   const summary = useMemo(() => {
     const bySeverity = { Critical: 0, High: 0, Medium: 0, Low: 0, Info: 0 } as Record<Severity, number>;
@@ -50,14 +57,22 @@ export default function Dashboard({ hosts, onSearch, scan }: {
       (b.vuln.exploitFrameworks?.length ?? 0) - (a.vuln.exploitFrameworks?.length ?? 0) ||
       b.vuln.cvss - a.vuln.cvss);
 
+    // Ranked by what is worst on each host, not filtered to criticals only.
+    // An estate whose findings are all medium still has a "fix these first"
+    // list, and the old threshold left those customers staring at nothing.
     const riskiest = [...hosts]
       .map(h => ({
         host: h,
+        worst: worstSeverity(h.vulns),
+        findings: h.vulns.length,
         critical: h.vulns.filter(v => v.severity === "Critical").length,
         exploits: h.vulns.filter(v => v.exploitAvailable).length,
       }))
-      .filter(r => r.critical > 0 || r.exploits > 0)
-      .sort((a, b) => b.exploits - a.exploits || b.critical - a.critical)
+      .filter(r => r.findings > 0)
+      .sort((a, b) =>
+        b.exploits - a.exploits ||
+        (b.worst ? sevRank(b.worst) : 0) - (a.worst ? sevRank(a.worst) : 0) ||
+        b.findings - a.findings)
       .slice(0, 6);
 
     return {
@@ -71,6 +86,11 @@ export default function Dashboard({ hosts, onSearch, scan }: {
   }, [hosts]);
 
   const totalFindings = SEV_ORDER.reduce((a, s) => a + summary.bySeverity[s], 0);
+
+  const repeated = useMemo(() => topRepeatedFindings(hosts), [hosts]);
+  const hostRisk = useMemo(() => hostsByWorstSeverity(hosts), [hosts]);
+  const services = useMemo(() => topServices(hosts), [hosts]);
+  const families = useMemo(() => topFamilies(hosts), [hosts]);
 
   return (
     <div className="space-y-3">
@@ -90,32 +110,50 @@ export default function Dashboard({ hosts, onSearch, scan }: {
         <Stat label="مجموع CVEها" value={faNum(summary.cves)} />
       </div>
 
-      {/* ── severity spread ── */}
-      <div className="bg-card border border-border rounded p-4">
-        <div className="flex items-center gap-2 mb-3">
-          <Bug size={13} className="text-primary" />
-          <span className="text-xs font-semibold text-foreground">توزیع شدت آسیب‌پذیری‌ها</span>
-          {totalFindings > 0 && (
-            <span className="ms-auto text-[11px] text-muted-foreground">{faNum(totalFindings)} یافته</span>
-          )}
-        </div>
+      {/* ── is it getting better? ── */}
+      <Panel icon={<TrendingDown size={13} className="text-primary" />}
+             title="روند آسیب‌پذیری‌ها"
+             meta={trend.length >= 2 ? `${faNum(trend.length)} اسکن` : undefined}>
+        <TrendChart points={trend} />
+      </Panel>
 
-        {totalFindings === 0 ? (
-          <div className="flex items-start gap-2.5 text-[12px] text-muted-foreground leading-relaxed">
-            <ShieldCheck size={14} className="text-[#2ea043] flex-shrink-0 mt-0.5" />
-            <p>
-              هیچ آسیب‌پذیری‌ای روی میزبان‌های شما ثبت نشده است. اسکن انجام شده و
-              {" "}{faNum(hosts.length)} میزبان بررسی شده‌اند.
-            </p>
-          </div>
-        ) : (
-          <SeverityChart
-            counts={summary.bySeverity}
-            total={totalFindings}
-            onSelect={s => onSearch(severityQuery(s))}
-          />
-        )}
+      {/* ── how bad are the findings, and how much of the estate is involved ──
+          Two different questions, so two charts: one counts findings, the
+          other counts hosts. */}
+      <div className="grid md:grid-cols-2 gap-3">
+        <Panel icon={<Bug size={13} className="text-primary" />}
+               title="توزیع شدت آسیب‌پذیری‌ها"
+               meta={totalFindings > 0 ? `${faNum(totalFindings)} یافته` : undefined}>
+          {totalFindings === 0 ? (
+            <div className="flex items-start gap-2.5 text-[12px] text-muted-foreground leading-relaxed">
+              <ShieldCheck size={14} className="text-[#2ea043] flex-shrink-0 mt-0.5" />
+              <p>
+                هیچ آسیب‌پذیری‌ای روی میزبان‌های شما ثبت نشده است. اسکن انجام شده و
+                {" "}{faNum(hosts.length)} میزبان بررسی شده‌اند.
+              </p>
+            </div>
+          ) : (
+            <SeverityChart counts={summary.bySeverity} total={totalFindings} onSearch={onSearch} />
+          )}
+        </Panel>
+
+        <Panel icon={<Server size={13} className="text-primary" />}
+               title="وضعیت میزبان‌ها"
+               meta={`${faNum(hosts.length)} میزبان`}>
+          <BarList data={hostRisk} labelWidth="8.5rem" onSearch={onSearch} />
+        </Panel>
       </div>
+
+      {/* ── the work list ──
+          The same finding on many hosts is one fix, not many. This is usually
+          the shortest path from "۱۹ یافته" to "۴ کار". */}
+      {repeated.length > 0 && (
+        <Panel icon={<Repeat2 size={13} className="text-primary" />}
+               title="یافته‌های تکرارشونده"
+               meta="بر اساس تعداد میزبان درگیر">
+          <BarList data={repeated} labelWidth="14rem" onSearch={onSearch} />
+        </Panel>
+      )}
 
       {/* ── findings with a published exploit ── */}
       <div className="bg-card border border-border rounded overflow-hidden">
@@ -173,7 +211,7 @@ export default function Dashboard({ hosts, onSearch, scan }: {
             <span className="text-xs font-semibold text-foreground">میزبان‌های پرخطر</span>
           </div>
           <div className="divide-y divide-border">
-            {summary.riskiest.map(({ host, critical, exploits }) => (
+            {summary.riskiest.map(({ host, worst, findings, exploits }) => (
               <button key={host.ip} onClick={() => onSearch(host.ip)}
                 className="w-full text-start px-4 py-2.5 hover:bg-secondary/20 transition-colors flex items-center gap-3">
                 <span className="text-[13px] font-mono text-primary" dir="ltr">{host.ip}</span>
@@ -188,18 +226,44 @@ export default function Dashboard({ hosts, onSearch, scan }: {
                       <Zap size={10} /> {faNum(exploits)}
                     </span>
                   )}
-                  {critical > 0 && (
-                    <span className="flex items-center gap-1 text-[11px] text-[#ff3b3b]">
-                      <ShieldAlert size={10} /> {faNum(critical)}
+                  {worst && (
+                    <span className="flex items-center gap-1 text-[11px]" style={{ color: SEV_COLOR[worst] }}>
+                      <ShieldAlert size={10} /> {SEV_FA[worst]}
                     </span>
                   )}
-                  <span className="text-[11px] text-muted-foreground">{faNum(host.ports.length)} پورت</span>
+                  <span className="text-[11px] text-muted-foreground">{faNum(findings)} یافته</span>
+                  <span className="text-[11px] text-muted-foreground hidden sm:block">
+                    {faNum(host.ports.length)} پورت
+                  </span>
                 </span>
               </button>
             ))}
           </div>
         </div>
       )}
+
+      {/* ── what the attack surface is made of, and what kind of problem it is ── */}
+      <div className="grid md:grid-cols-2 gap-3">
+        <Panel icon={<Wifi size={13} className="text-primary" />}
+               title="سرویس‌های در معرض"
+               meta="بر اساس تعداد میزبان">
+          {services.length === 0 ? (
+            <p className="text-[12px] text-muted-foreground">پورت بازی ثبت نشده است.</p>
+          ) : (
+            <BarList data={services} labelWidth="7rem" onSearch={onSearch} />
+          )}
+        </Panel>
+
+        <Panel icon={<FolderTree size={13} className="text-primary" />}
+               title="دسته‌بندی یافته‌ها"
+               meta="خانوادهٔ پلاگین">
+          {families.length === 0 ? (
+            <p className="text-[12px] text-muted-foreground">یافته‌ای برای دسته‌بندی وجود ندارد.</p>
+          ) : (
+            <BarList data={families} labelWidth="9rem" onSearch={onSearch} />
+          )}
+        </Panel>
+      </div>
 
       {/* ── where the hosts actually live ── */}
       <NetworkPanel hosts={hosts} onSearch={onSearch} />
@@ -208,6 +272,26 @@ export default function Dashboard({ hosts, onSearch, scan }: {
 }
 
 // ── shared bits ─────────────────────────────────────────────────────────────
+
+/** Every chart panel on the dashboard has the same head, so it is one object
+ *  rather than the same markup written out six times. */
+function Panel({ icon, title, meta, children }: {
+  icon: React.ReactNode;
+  title: string;
+  meta?: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="bg-card border border-border rounded p-4">
+      <div className="flex items-center gap-2 mb-3">
+        {icon}
+        <span className="text-xs font-semibold text-foreground">{title}</span>
+        {meta && <span className="ms-auto text-[11px] text-muted-foreground">{meta}</span>}
+      </div>
+      {children}
+    </div>
+  );
+}
 
 /**
  * States plainly when the network was last scanned. An empty findings list is

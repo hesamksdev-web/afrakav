@@ -70,6 +70,19 @@ export interface Scan {
   uploadedAt: string;
 }
 
+/** One point on the customer's trend: the whole estate right after a scan. */
+export interface EstateSnapshot {
+  takenAt: string;
+  hosts: number;
+  critical: number;
+  high: number;
+  medium: number;
+  low: number;
+  info: number;
+  exploitable: number;
+  cves: number;
+}
+
 export interface AuditEvent {
   id: number;
   occurredAt: string;
@@ -168,6 +181,7 @@ const ERROR_FA: Record<string, string> = {
   "could not sign out": "خروج از حساب با خطا مواجه شد",
   "could not load activity": "بارگیری فعالیت‌های حساب با خطا مواجه شد",
   "could not load events": "بارگیری رویدادها با خطا مواجه شد",
+  "could not load the trend": "بارگیری روند آسیب‌پذیری‌ها با خطا مواجه شد",
   "invalid scan id": "شناسهٔ اسکن نامعتبر است",
   "scan not found": "اسکن مورد نظر یافت نشد",
   "could not delete the scan": "حذف اسکن با خطا مواجه شد",
@@ -368,6 +382,11 @@ export function fetchStats(customerId?: number): Promise<Stats> {
 
 export function fetchScans(customerId?: number): Promise<Scan[]> {
   return request<Scan[]>(`/api/scans${qs(customerId)}`);
+}
+
+// Oldest first, so the trend plots left to right without re-sorting.
+export function fetchTrend(customerId?: number): Promise<EstateSnapshot[]> {
+  return request<EstateSnapshot[]>(`/api/trend${qs(customerId)}`);
 }
 
 // ── admin ───────────────────────────────────────────────────────────────────

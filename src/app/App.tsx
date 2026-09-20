@@ -5,7 +5,7 @@ import {
   Cpu, Wifi, ExternalLink, Tag, Activity,
   Building, LogOut, Loader2, Zap, ArrowRight, LayoutDashboard, SlidersHorizontal,
 } from "lucide-react";
-import { fetchHosts, fetchScans, safeHref, HostRecord, Severity } from "./api";
+import { fetchHosts, fetchScans, fetchTrend, safeHref, EstateSnapshot, HostRecord, Severity } from "./api";
 import { AuthProvider, useAuth } from "./auth";
 import { faNum, timeAgo } from "./format";
 import Login from "./Login";
@@ -92,8 +92,8 @@ function BrandNav({ username, onLogout, onSettings, maxW = "max-w-5xl" }: {
 }
 
 // ── Home screen (customer landing — search only, no upload) ─────────────────
-function Home({ hosts, loading, scan, onSearch, username, onLogout, onSettings }: {
-  hosts: HostRecord[]; loading: boolean; scan: ScanStatus | null; onSearch: (q: string) => void;
+function Home({ hosts, loading, scan, trend, onSearch, username, onLogout, onSettings }: {
+  hosts: HostRecord[]; loading: boolean; scan: ScanStatus | null; trend: EstateSnapshot[]; onSearch: (q: string) => void;
   username?: string; onLogout: () => void; onSettings: () => void;
 }) {
   const [q, setQ] = useState("");
@@ -155,7 +155,7 @@ function Home({ hosts, loading, scan, onSearch, username, onLogout, onSettings }
               </div>
             </div>
           ) : (
-            <Dashboard hosts={hosts} onSearch={onSearch} scan={scan} />
+            <Dashboard hosts={hosts} onSearch={onSearch} scan={scan} trend={trend} />
           )}
         </div>
       </div>
@@ -659,6 +659,10 @@ function filterHosts(hosts: HostRecord[], q: string): HostRecord[] {
     }
     // severity:critical — what the dashboard chart narrows to when a bar is
     // clicked.
+    if (lower.startsWith("family:")) {
+      const want = lower.slice(7);
+      return h.vulns.some(v => v.family.toLowerCase().includes(want));
+    }
     if (lower.startsWith("severity:") || lower.startsWith("sev:")) {
       const want = lower.split(":")[1];
       return h.vulns.some(v => v.severity.toLowerCase() === want);
@@ -715,6 +719,7 @@ function CustomerApp() {
   // by the authenticated user, so a tenant can never see another's IPs.
   const [hosts, setHosts] = useState<HostRecord[]>([]);
   const [scan, setScan] = useState<ScanStatus | null>(null);
+  const [trend, setTrend] = useState<EstateSnapshot[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -733,6 +738,12 @@ function CustomerApp() {
         setScan({ at: list[0].uploadedAt, count: list.length });
       })
       .catch(() => { /* the panel just omits the scan line */ });
+
+    // One point per scan, describing the estate right after it. Starts
+    // accumulating from the first upload made after this feature shipped.
+    fetchTrend()
+      .then(points => { if (!cancelled) setTrend(points); })
+      .catch(() => { /* the trend panel explains itself when empty */ });
 
     return () => { cancelled = true; };
   }, []);
@@ -814,7 +825,7 @@ function CustomerApp() {
   }
 
   return (
-    <Home hosts={hosts} loading={loading} scan={scan} onSearch={doSearch}
+    <Home hosts={hosts} loading={loading} scan={scan} trend={trend} onSearch={doSearch}
       username={user?.username} onLogout={logout} onSettings={() => go({ screen: "settings" })} />
   );
 }

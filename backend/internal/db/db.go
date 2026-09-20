@@ -171,6 +171,28 @@ CREATE INDEX IF NOT EXISTS audit_events_actor_idx    ON audit_events (actor_id, 
 CREATE INDEX IF NOT EXISTS audit_events_customer_idx ON audit_events (customer_id, occurred_at DESC);
 CREATE INDEX IF NOT EXISTS audit_events_action_idx   ON audit_events (action, occurred_at DESC);
 
+-- estate_snapshots is what makes a trend answerable. Each upload writes one
+-- row describing the customer's WHOLE estate as it stands after that upload —
+-- not the contents of the uploaded file, which may cover only part of it. One
+-- row per scan keeps the series small while still plotting the real state at
+-- each point in time.
+CREATE TABLE IF NOT EXISTS estate_snapshots (
+    id          BIGSERIAL PRIMARY KEY,
+    customer_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    scan_id     BIGINT REFERENCES scans(id) ON DELETE SET NULL,
+    taken_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
+    hosts       INT NOT NULL DEFAULT 0,
+    critical    INT NOT NULL DEFAULT 0,
+    high        INT NOT NULL DEFAULT 0,
+    medium      INT NOT NULL DEFAULT 0,
+    low         INT NOT NULL DEFAULT 0,
+    info        INT NOT NULL DEFAULT 0,
+    exploitable INT NOT NULL DEFAULT 0,
+    cves        INT NOT NULL DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS estate_snapshots_customer_idx
+    ON estate_snapshots (customer_id, taken_at);
+
 CREATE OR REPLACE FUNCTION audit_events_immutable() RETURNS trigger AS $$
 BEGIN
     RAISE EXCEPTION 'audit_events is append-only';

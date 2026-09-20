@@ -29,3 +29,19 @@ export const SEV_COLOR: Record<Severity, string> = {
 
 /** The search that narrows the view to one severity. */
 export const severityQuery = (s: Severity) => `severity:${s.toLowerCase()}`;
+
+/** Worst first, so findings and hosts can be ranked consistently. */
+export const sevRank = (s: Severity) => SEV_ORDER.length - SEV_ORDER.indexOf(s);
+
+/**
+ * The highest severity present on a host, or null when it carries nothing.
+ * The Nessus parser only keeps findings of severity 1–4, so a host with an
+ * empty list really is a host with no findings, not one with unshown ones.
+ */
+export function worstSeverity(vulns: { severity: Severity }[]): Severity | null {
+  let worst: Severity | null = null;
+  for (const v of vulns) {
+    if (!worst || sevRank(v.severity) > sevRank(worst)) worst = v.severity;
+  }
+  return worst;
+}

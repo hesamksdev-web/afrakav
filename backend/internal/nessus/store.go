@@ -126,6 +126,15 @@ func matches(h Host, q string) bool {
 				}
 			}
 			return false
+		case "family":
+			// family:"web servers" — what the dashboard's category chart
+			// narrows to. Substring, because plugin families are wordy.
+			for _, v := range h.Vulns {
+				if strings.Contains(strings.ToLower(v.Family), val) {
+					return true
+				}
+			}
+			return false
 		case "severity", "sev":
 			// severity:critical — the filter the dashboard's severity chart
 			// applies when one of its bars is clicked.

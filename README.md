@@ -152,6 +152,7 @@ Authenticated (`Authorization: Bearer <token>`):
 | GET    | `/api/search?q=`   | Shodan-style query, scoped                              |
 | GET    | `/api/stats`       | dashboard aggregates, scoped                            |
 | GET    | `/api/scans`       | upload history, scoped                                  |
+| GET    | `/api/trend`       | findings by severity after each scan, oldest first      |
 | GET    | `/api/events`      | caller's own security activity (logins, password/2FA changes) |
 | POST   | `/api/password`    | `{currentPassword,newPassword}` → a replacement token   |
 | POST   | `/api/2fa/setup`   | begin enrolment → `{secret, uri}`                       |
@@ -176,7 +177,8 @@ Admin only:
 
 **Search grammar:** `port:445`, `tag:rdp`, `vuln:CVE-2021-44228`, `cve:…`,
 `severity:critical` (`sev:` also works — what the dashboard's severity chart
-applies when a bar is clicked), `product:jenkins`, `os:windows`,
+applies when a bar is clicked), `family:web servers` (plugin family, substring
+match — what the category chart applies), `product:jenkins`, `os:windows`,
 `subnet:10.20.30` (a /24, `net:` also works), `has:exploit`, `has:malware`,
 `has:critical`, `exploit:true|false`, `*` for everything, or a bare term
 matching IP / hostname / domain / OS / org / port / service / CVE / plugin name.

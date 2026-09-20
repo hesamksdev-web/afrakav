@@ -19,6 +19,7 @@
 //	GET  /api/search?q=             Shodan-style query, scoped
 //	GET  /api/stats                 dashboard aggregates, scoped
 //	GET  /api/scans                 upload history, scoped
+//	GET  /api/trend                 findings over time, scoped
 //	GET  /api/events                caller's own security activity
 //	POST /api/password              change your own password
 //	POST /api/2fa/setup             begin enrolment -> {secret,uri}
@@ -138,6 +139,7 @@ func main() {
 	mux.Handle("GET /api/search", srv.authed(srv.handleSearch))
 	mux.Handle("GET /api/stats", srv.authed(srv.handleStats))
 	mux.Handle("GET /api/scans", srv.authed(srv.handleScans))
+	mux.Handle("GET /api/trend", srv.authed(srv.handleTrend))
 	mux.Handle("GET /api/events", srv.authed(srv.handleMyEvents))
 	mux.Handle("POST /api/password", srv.authed(srv.handleChangePassword))
 	mux.Handle("POST /api/2fa/setup", srv.authed(srv.handleTOTPSetup))
@@ -174,6 +176,7 @@ func (s *server) bootstrap(ctx context.Context) {
 	if err := s.db.RecordAuditEvent(ctx, audit.Event{Action: audit.ActionSystemStarted}); err != nil {
 		log.Printf("bootstrap: could not record system.started: %v", err)
 	}
+	s.backfillTrends(ctx)
 
 	adminUser := os.Getenv("ADMIN_USER")
 	adminPass := os.Getenv("ADMIN_PASSWORD")
@@ -230,6 +233,23 @@ func (s *server) bootstrap(ctx context.Context) {
 					}
 				}
 			}
+		}
+	}
+}
+
+// backfillTrends gives customers who already had scans before the trend
+// existed a single starting point, so their chart begins filling on the next
+// upload rather than the one after. Customers who already have snapshots are
+// left alone, which makes this safe to run on every boot.
+func (s *server) backfillTrends(ctx context.Context) {
+	customers, err := s.db.ListCustomers(ctx)
+	if err != nil {
+		log.Printf("bootstrap: could not list customers for trend backfill: %v", err)
+		return
+	}
+	for _, c := range customers {
+		if err := s.db.BackfillEstateSnapshot(ctx, c.ID); err != nil {
+			log.Printf("bootstrap: trend backfill for %q: %v", c.Username, err)
 		}
 	}
 }
@@ -700,6 +720,22 @@ func (s *server) handleStats(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, nessus.ComputeStats(hosts, ""))
+}
+
+// handleTrend returns the customer's estate snapshots — one per upload — so
+// the dashboard can plot whether the network is actually improving.
+func (s *server) handleTrend(w http.ResponseWriter, r *http.Request) {
+	cid, err := s.targetCustomer(r)
+	if err != nil {
+		writeScopeError(w, err)
+		return
+	}
+	points, err := s.db.ListEstateSnapshots(r.Context(), cid)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "could not load the trend")
+		return
+	}
+	writeJSON(w, http.StatusOK, points)
 }
 
 func (s *server) handleScans(w http.ResponseWriter, r *http.Request) {
