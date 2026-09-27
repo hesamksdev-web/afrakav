@@ -15,6 +15,7 @@ import ThemeToggle from "./components/ThemeToggle";
 import Settings from "./Settings";
 import AccessRequests from "./components/AccessRequests";
 import EventsPanel from "./components/EventsPanel";
+import ShowcaseCard from "./components/ShowcaseCard";
 
 const faNum = (n: number) => n.toLocaleString("fa-IR");
 
@@ -64,6 +65,7 @@ export default function Admin() {
         <div className="space-y-6">
           <CreateCustomerCard onCreated={refresh} />
           <UploadCard customers={customers} onUploaded={refresh} />
+          <ShowcaseCard />
         </div>
 
         {/* ── Customers list ── */}

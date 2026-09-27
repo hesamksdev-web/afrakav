@@ -5,7 +5,7 @@ import Brand from "./components/Brand";
 import ThemeToggle from "./components/ThemeToggle";
 import AccessRequest from "./AccessRequest";
 
-export default function Login() {
+export default function Login({ onBack }: { onBack?: () => void }) {
   const { login, verifyCode } = useAuth();
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
@@ -53,6 +53,13 @@ export default function Login() {
   return (
     <div className="min-h-screen bg-background flex flex-col items-center justify-center px-4">
       <div className="fixed top-4 end-4"><ThemeToggle /></div>
+      {onBack && (
+        <button onClick={onBack}
+          className="fixed top-4 start-4 flex items-center gap-1.5 text-xs text-muted-foreground
+                     hover:text-primary transition-colors">
+          <ArrowRight size={13} /> بازگشت
+        </button>
+      )}
       <div className="w-full max-w-sm">
         {/* Brand */}
         {/* The mark carries the brand on its own here; stacking the product

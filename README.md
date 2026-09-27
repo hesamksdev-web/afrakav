@@ -71,6 +71,36 @@ pnpm install
 VITE_API_URL=http://localhost:8080 pnpm dev   # Vite dev server on :5173
 ```
 
+## Landing page
+
+The root URL serves a public landing page, not the login form — signing in is a
+step you take from it. It explains the service and, when an admin has published
+one, shows a **sample scan** in the style of a Shodan result: masked addresses,
+open ports, services and findings.
+
+The sample is anonymised **when it is published, not when it is rendered**
+(`backend/internal/showcase`). The stored record only ever holds the redacted
+form, so a future endpoint or an extra field cannot leak the original. Masking
+the address is the obvious half; the half that actually identifies a customer
+is dropped outright:
+
+| Dropped entirely | Kept |
+|---|---|
+| hostnames, domains, organisation | masked IP, OS, tags |
+| service banners (certificate names, mail greetings) | port, protocol, service, product |
+| finding descriptions and remediation text | finding name, CVE, severity, CVSS |
+
+Addresses are masked **two octets by default** (`203.0.×.×`). Masking only the
+last one leaves a `/24`, and a `/24` of public space is attributable to its
+owner through a routing registry — which defeats the point for exactly the
+customers whose addresses are public. The admin can choose one or three
+instead; choosing one shows a warning saying why.
+
+Stats describe the whole scan; the published sample is capped at 60 hosts and
+ordered worst-first. Publishing and clearing are both audited.
+
+Admins manage it from **نمونهٔ اسکن صفحهٔ نخست** in the admin panel.
+
 ## Access requests
 
 The login page carries a public **درخواست دسترسی** form. A visitor submits their
@@ -171,6 +201,7 @@ Public:
 | POST   | `/api/login/mfa`| `{challenge, code}` → `{token, user}`        |
 | POST   | `/api/access-request` | ask for an account; creates nothing   |
 | GET    | `/api/health`   | liveness probe                               |
+| GET    | `/api/showcase` | anonymised sample scan for the landing page  |
 
 Authenticated (`Authorization: Bearer <token>`):
 
@@ -208,6 +239,8 @@ Admin only:
 | POST   | `/api/admin/access-requests/{id}/approve` | `{username,password,displayName}` → creates the customer |
 | POST   | `/api/admin/access-requests/{id}/reject`  | decline a pending request        |
 | GET    | `/api/admin/events`      | full security event log, filterable by action/outcome/actor/customer/time |
+| POST   | `/api/admin/showcase`    | multipart: `file=.nessus`, `maskOctets=1..3`, `label` — anonymises, then publishes |
+| POST   | `/api/admin/showcase/clear` | take the sample off the landing page      |
 
 **Search grammar:** `port:445`, `tag:rdp`, `vuln:CVE-2021-44228`, `cve:…`,
 `severity:critical` (`sev:` also works — what the dashboard's severity chart

@@ -9,6 +9,7 @@
 //	POST /api/login/mfa             {challenge,code} -> {token,user}
 //	POST /api/access-request        ask for an account; creates nothing
 //	GET  /api/health                liveness
+//	GET  /api/showcase              anonymised sample scan for the landing page
 //
 // Authenticated (Bearer token):
 //
@@ -42,6 +43,8 @@
 //	POST /api/admin/access-requests/{id}/approve  create the customer
 //	POST /api/admin/access-requests/{id}/reject   decline it
 //	GET  /api/admin/events                    the full security event log
+//	POST /api/admin/showcase                  publish an anonymised landing-page sample
+//	POST /api/admin/showcase/clear            take the sample down
 package main
 
 import (
@@ -63,6 +66,7 @@ import (
 	"github.com/afranet/afrashodan/internal/db"
 	"github.com/afranet/afrashodan/internal/mitre"
 	"github.com/afranet/afrashodan/internal/nessus"
+	"github.com/afranet/afrashodan/internal/showcase"
 )
 
 const (
@@ -132,6 +136,7 @@ func main() {
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /api/health", srv.handleHealth)
+	mux.HandleFunc("GET /api/showcase", srv.handleShowcase)
 	mux.HandleFunc("POST /api/login", srv.handleLogin)
 	mux.HandleFunc("POST /api/login/mfa", srv.handleLoginMFA)
 	mux.HandleFunc("POST /api/access-request", srv.handleAccessRequest)
@@ -164,6 +169,8 @@ func main() {
 	mux.Handle("POST /api/admin/access-requests/{id}/approve", srv.adminOnly(srv.handleApproveRequest))
 	mux.Handle("POST /api/admin/access-requests/{id}/reject", srv.adminOnly(srv.handleRejectRequest))
 	mux.Handle("GET /api/admin/events", srv.adminOnly(srv.handleAdminEvents))
+	mux.Handle("POST /api/admin/showcase", srv.adminOnly(srv.handlePublishShowcase))
+	mux.Handle("POST /api/admin/showcase/clear", srv.adminOnly(srv.handleClearShowcase))
 
 	log.Printf("Afrashodan backend listening on %s", addr)
 	httpSrv := &http.Server{
@@ -265,6 +272,113 @@ func (s *server) backfillTrends(ctx context.Context) {
 
 func (s *server) handleHealth(w http.ResponseWriter, _ *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+}
+
+// ── landing-page showcase ───────────────────────────────────────────────────
+//
+// The one endpoint that serves scan-derived data to nobody in particular, so
+// it serves only what internal/showcase already redacted at ingest: masked
+// addresses, no hostnames, no domains, no organisation, no banners. Nothing
+// here reads the hosts table.
+
+func (s *server) handleShowcase(w http.ResponseWriter, r *http.Request) {
+	rec, err := s.db.GetShowcase(r.Context())
+	if errors.Is(err, db.ErrNotFound) {
+		// An empty landing page is a normal state, not an error.
+		writeJSON(w, http.StatusOK, map[string]any{"published": false})
+		return
+	}
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "could not load the showcase")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"published":   true,
+		"sourceLabel": rec.SourceLabel,
+		"showcase":    rec.Showcase,
+	})
+}
+
+// handlePublishShowcase parses an uploaded scan, anonymises it, and stores only
+// the anonymised form. The raw hosts never leave this function.
+func (s *server) handlePublishShowcase(w http.ResponseWriter, r *http.Request) {
+	r.Body = http.MaxBytesReader(w, r.Body, maxUploadBytes)
+	if err := r.ParseMultipartForm(uploadMemory); err != nil {
+		writeError(w, http.StatusBadRequest, "file too large or malformed form (max 64 MiB)")
+		return
+	}
+
+	// Two octets by default: masking only the last one leaves a /24 that a
+	// routing registry can attribute back to its owner.
+	maskOctets := 2
+	if v := strings.TrimSpace(r.FormValue("maskOctets")); v != "" {
+		n, err := strconv.Atoi(v)
+		if err != nil || n < 1 || n > 3 {
+			writeError(w, http.StatusBadRequest, "maskOctets must be between 1 and 3")
+			return
+		}
+		maskOctets = n
+	}
+	label := strings.TrimSpace(r.FormValue("label"))
+	if len([]rune(label)) > maxRequestField {
+		writeError(w, http.StatusUnprocessableEntity, "the label is too long")
+		return
+	}
+
+	file, header, err := r.FormFile("file")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, `missing multipart field "file"`)
+		return
+	}
+	defer file.Close()
+
+	hosts, err := nessus.Parse(file)
+	if err != nil {
+		log.Printf("showcase: parsing %q failed: %v", header.Filename, err)
+		writeError(w, http.StatusUnprocessableEntity, "could not parse the Nessus file")
+		return
+	}
+
+	published := showcase.Anonymise(hosts, maskOctets, time.Now())
+
+	// Belt and braces: refuse to publish anything the anonymiser itself is not
+	// happy with, rather than trusting it silently.
+	if problems := showcase.Leak(published); len(problems) > 0 {
+		log.Printf("showcase: refusing to publish, anonymiser reported %v", problems)
+		writeError(w, http.StatusInternalServerError, "the scan could not be anonymised safely")
+		return
+	}
+
+	admin := claimsFrom(r).Username
+	if err := s.db.SaveShowcase(r.Context(), label, admin, published); err != nil {
+		writeError(w, http.StatusInternalServerError, "could not publish the showcase")
+		return
+	}
+
+	s.recordAudit(r, audit.Event{
+		Action: audit.ActionShowcasePublished, TargetType: "showcase", TargetLabel: label,
+		Details: map[string]any{
+			"scannedHosts": published.Stats.Hosts,
+			"sampleHosts":  len(published.Hosts),
+			"findings":     published.Stats.Findings,
+			"maskOctets":   maskOctets,
+		},
+	})
+	writeJSON(w, http.StatusOK, map[string]any{
+		"published":    true,
+		"scannedHosts": published.Stats.Hosts,
+		"sampleHosts":  len(published.Hosts),
+		"findings":     published.Stats.Findings,
+	})
+}
+
+func (s *server) handleClearShowcase(w http.ResponseWriter, r *http.Request) {
+	if err := s.db.ClearShowcase(r.Context()); err != nil {
+		writeError(w, http.StatusInternalServerError, "could not clear the showcase")
+		return
+	}
+	s.recordAudit(r, audit.Event{Action: audit.ActionShowcaseCleared, TargetType: "showcase"})
+	writeJSON(w, http.StatusOK, map[string]any{"status": "ok"})
 }
 
 func (s *server) handleLogin(w http.ResponseWriter, r *http.Request) {

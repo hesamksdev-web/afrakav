@@ -44,6 +44,9 @@ const (
 	ActionRequestApproved  = "request.approved"
 	ActionRequestRejected  = "request.rejected"
 
+	ActionShowcasePublished = "showcase.published"
+	ActionShowcaseCleared   = "showcase.cleared"
+
 	ActionScanUploaded = "scan.uploaded"
 	ActionScanDeleted  = "scan.deleted"
 

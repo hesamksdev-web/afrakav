@@ -11,6 +11,7 @@ import {
 } from "./api";
 import { AuthProvider, useAuth } from "./auth";
 import { faNum, timeAgo } from "./format";
+import Landing from "./Landing";
 import Login from "./Login";
 import Admin from "./Admin";
 import Dashboard, { ExploitBadges, ScanBanner, ScanStatus } from "./components/Dashboard";
@@ -327,8 +328,10 @@ function SearchResults({
                       {h.vulns.filter(v => v.cve !== "N/A").length > 4 && (
                         <span className="text-[10px] px-1.5 py-0.5 bg-secondary border border-border text-muted-foreground rounded">{faNum(h.vulns.filter(v => v.cve !== "N/A").length - 4)} مورد دیگر</span>
                       )}
-                      <span className="ms-auto text-[11px] font-mono text-muted-foreground self-center" dir="ltr">
-                        {critCount}C · {highCount}H · {h.vulns.filter(v => v.severity === "Medium").length}M
+                      <span className="ms-auto text-[11px] font-mono text-muted-foreground self-center">
+                        <span dir="ltr">
+                          {critCount}C · {highCount}H · {h.vulns.filter(v => v.severity === "Medium").length}M
+                        </span>
                       </span>
                     </div>
                   )}
@@ -848,6 +851,24 @@ function CustomerApp() {
 // ── Root: auth gate → Login / Admin / Customer ──────────────────────────────
 function Root() {
   const { user, loading } = useAuth();
+  // The public entry point is the landing page; the login form is a step you
+  // take from it, and the browser's back button returns you.
+  const [entry, setEntry] = useState<"landing" | "login">("landing");
+
+  useEffect(() => {
+    const onPop = (e: PopStateEvent) => {
+      const v = (e.state as { afrakavEntry?: "landing" | "login" } | null)?.afrakavEntry;
+      setEntry(v ?? "landing");
+    };
+    window.addEventListener("popstate", onPop);
+    return () => window.removeEventListener("popstate", onPop);
+  }, []);
+
+  const goToLogin = () => {
+    setEntry("login");
+    window.history.pushState({ afrakavEntry: "login" }, "");
+  };
+
   if (loading) {
     return (
       <div className="min-h-screen bg-background flex items-center justify-center text-muted-foreground">
@@ -855,7 +876,11 @@ function Root() {
       </div>
     );
   }
-  if (!user) return <Login />;
+  if (!user) {
+    return entry === "login"
+      ? <Login onBack={() => window.history.back()} />
+      : <Landing onSignIn={goToLogin} onRequestAccess={goToLogin} />;
+  }
   if (user.role === "admin") return <Admin />;
   return <CustomerApp />;
 }

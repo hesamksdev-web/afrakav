@@ -193,6 +193,18 @@ CREATE TABLE IF NOT EXISTS estate_snapshots (
 CREATE INDEX IF NOT EXISTS estate_snapshots_customer_idx
     ON estate_snapshots (customer_id, taken_at);
 
+-- showcase holds the one anonymised scan published on the public landing
+-- page. A single row by construction: there is one landing page, and the
+-- CHECK makes a second row impossible rather than merely unexpected. The
+-- payload is already redacted when it lands here — see internal/showcase.
+CREATE TABLE IF NOT EXISTS showcase (
+    id           INT PRIMARY KEY DEFAULT 1 CHECK (id = 1),
+    published_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    published_by TEXT NOT NULL DEFAULT '',
+    source_label TEXT NOT NULL DEFAULT '',
+    data         JSONB NOT NULL
+);
+
 CREATE OR REPLACE FUNCTION audit_events_immutable() RETURNS trigger AS $$
 BEGIN
     RAISE EXCEPTION 'audit_events is append-only';

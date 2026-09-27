@@ -70,6 +70,54 @@ export interface Scan {
   uploadedAt: string;
 }
 
+// ── public landing-page showcase ────────────────────────────────────────────
+// Served to anyone, so it carries only what the backend redacted at ingest:
+// masked addresses, and no hostname, domain, organisation or service banner.
+
+export interface ShowcasePort {
+  port: number;
+  proto: string;
+  service: string;
+  product: string;
+}
+
+export interface ShowcaseVuln {
+  cve?: string;
+  name: string;
+  severity: Severity;
+  cvss: number;
+}
+
+export interface ShowcaseHost {
+  ip: string;
+  os: string;
+  tags: string[];
+  ports: ShowcasePort[];
+  vulns: ShowcaseVuln[];
+}
+
+export interface ShowcaseStats {
+  hosts: number;
+  openPorts: number;
+  findings: number;
+  cves: number;
+  bySeverity: Record<string, number>;
+  services: { port: number; service: string; hosts: number }[];
+}
+
+export interface Showcase {
+  publishedAt: string;
+  maskOctets: number;
+  hosts: ShowcaseHost[];
+  stats: ShowcaseStats;
+}
+
+export interface ShowcaseResponse {
+  published: boolean;
+  sourceLabel?: string;
+  showcase?: Showcase;
+}
+
 // ── MITRE ATT&CK ────────────────────────────────────────────────────────────
 // A .nessus file carries no ATT&CK data, so the backend derives it. Every
 // technique says where its mapping came from: "weakness" follows the
@@ -234,6 +282,12 @@ const ERROR_FA: Record<string, string> = {
   "could not load activity": "بارگیری فعالیت‌های حساب با خطا مواجه شد",
   "could not load events": "بارگیری رویدادها با خطا مواجه شد",
   "could not load the trend": "بارگیری روند آسیب‌پذیری‌ها با خطا مواجه شد",
+  "could not load the showcase": "بارگیری نمونهٔ اسکن با خطا مواجه شد",
+  "could not publish the showcase": "انتشار نمونهٔ اسکن با خطا مواجه شد",
+  "could not clear the showcase": "حذف نمونهٔ اسکن با خطا مواجه شد",
+  "the scan could not be anonymised safely": "ناشناس‌سازی این اسکن با اطمینان ممکن نشد؛ منتشر نشد",
+  "maskOctets must be between 1 and 3": "میزان پنهان‌سازی نشانی باید بین ۱ تا ۳ بخش باشد",
+  "the label is too long": "عنوان بیش از حد طولانی است",
   "invalid scan id": "شناسهٔ اسکن نامعتبر است",
   "scan not found": "اسکن مورد نظر یافت نشد",
   "could not delete the scan": "حذف اسکن با خطا مواجه شد",
@@ -436,6 +490,26 @@ export function fetchScans(customerId?: number): Promise<Scan[]> {
   return request<Scan[]>(`/api/scans${qs(customerId)}`);
 }
 
+export function fetchShowcase(): Promise<ShowcaseResponse> {
+  return request<ShowcaseResponse>("/api/showcase");
+}
+
+// Admin: the scan is anonymised server-side before it is stored, so what gets
+// published is never the file that was uploaded.
+export function publishShowcase(file: File, maskOctets: number, label: string): Promise<{
+  published: boolean; scannedHosts: number; sampleHosts: number; findings: number;
+}> {
+  const form = new FormData();
+  form.append("file", file);
+  form.append("maskOctets", String(maskOctets));
+  form.append("label", label);
+  return request("/api/admin/showcase", { method: "POST", body: form });
+}
+
+export function clearShowcase(): Promise<{ status: string }> {
+  return request("/api/admin/showcase/clear", { method: "POST" });
+}
+
 export function fetchHostAttack(ip: string, customerId?: number): Promise<HostAttack> {
   return request<HostAttack>(`/api/hosts/${encodeURIComponent(ip)}/attack${qs(customerId)}`);
 }
@@ -593,6 +667,8 @@ export const EVENT_ACTION_FA: Record<string, string> = {
   "system.bootstrap_admin_created": "ایجاد حساب مدیر اولیه",
   "system.bootstrap_demo_seeded": "بارگذاری اسکن نمونه",
   "audit.viewed": "مشاهدهٔ رویدادها",
+  "showcase.published": "انتشار نمونهٔ اسکن در صفحهٔ نخست",
+  "showcase.cleared": "حذف نمونهٔ اسکن از صفحهٔ نخست",
 };
 
 export const EVENT_OUTCOME_FA: Record<string, string> = {
