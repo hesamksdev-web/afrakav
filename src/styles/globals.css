@@ -1,0 +1,60 @@
+/* Landing-page atmosphere.
+   Kept out of the component so both themes stay declared in one place, the
+   way the rest of the interface does it. */
+
+:root {
+  /* A faint subnet grid behind the hero — the product's own subject matter,
+     used as texture rather than decoration. */
+  --grid-line: rgba(22, 65, 148, 0.07);
+  --hero-glow: rgba(22, 65, 148, 0.13);
+}
+
+.dark {
+  --grid-line: rgba(71, 130, 245, 0.06);
+  --hero-glow: rgba(71, 130, 245, 0.10);
+}
+
+.grid-backdrop {
+  background-image:
+    linear-gradient(to left, var(--grid-line) 1px, transparent 1px),
+    linear-gradient(to bottom, var(--grid-line) 1px, transparent 1px);
+  background-size: 54px 54px;
+  /* Fade the grid out downward so it reads as atmosphere, not a table. */
+  mask-image: linear-gradient(to bottom, #000 0%, #000 45%, transparent 100%);
+}
+
+.hero-glow::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(52% 44% at 72% 0%, var(--hero-glow), transparent 70%);
+  pointer-events: none;
+}
+
+/* Scan lines arrive in sequence, the way a scanner reports them. They start
+   visible rather than at zero opacity, so the page is readable in its very
+   first frame — a thumbnail or a slow connection never catches a blank list. */
+@keyframes scan-in {
+  from { opacity: 0.25; transform: translateY(3px); }
+  to   { opacity: 1; transform: none; }
+}
+
+.scan-line {
+  animation: scan-in 0.4s ease-out both;
+}
+
+@keyframes soft-pulse {
+  0%, 100% { opacity: 1; }
+  50%      { opacity: 0.35; }
+}
+
+.live-dot {
+  animation: soft-pulse 2.4s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .scan-line,
+  .live-dot {
+    animation: none;
+  }
+}
